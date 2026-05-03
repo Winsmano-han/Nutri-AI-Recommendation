@@ -1,0 +1,13 @@
+{
+  "name": "nutrifence-menu-scraper",
+  "version": "1.0.0",
+  "description": "Scrapes real Lagos restaurant menus using Google Maps + Claude AI",
+  "type": "module",
+  "scripts": {
+    "start": "node scrape_menus.js",
+    "scrape": "node scrape_menus.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

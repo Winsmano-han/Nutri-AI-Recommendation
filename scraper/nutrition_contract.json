@@ -1,0 +1,454 @@
+{
+  "_schema": {
+    "version": "2.0.0",
+    "description": "Nutrifence nutrition report contract. The DEFAULT contract is grounded in the official Federal Ministry of Health Food-Based Dietary Guidelines for Nigeria (FBDG, WHO-endorsed, 2006). Clinical condition contracts (cardiovascular, diabetes, obesity) are extracted directly from the FBDG. User-submitted nutritionist reports are parsed into a USER_SUBMITTED contract and layered on top of the FBDG default.",
+    "authority": {
+      "DEFAULT": "Federal Ministry of Health Nigeria + WHO — Food-Based Dietary Guidelines for Nigeria (2006)",
+      "NUTRITIONIST_PARSED": "Professional nutritionist document uploaded by the user or clinic",
+      "USER_SUBMITTED": "Self-reported by the user via the app"
+    },
+    "priorityOrder": [
+      "NUTRITIONIST_PARSED — highest authority. Enforced strictly. Overrides DEFAULT where they conflict.",
+      "USER_SUBMITTED — medium authority. Enforced but flagged as AI-extracted.",
+      "DEFAULT (FBDG) — always active as baseline. Never overridden completely — FBDG constraints apply even when a nutritionist report is present."
+    ],
+    "howContractsStack": "The pipeline always starts with DEFAULT (FBDG). If a user uploads a nutritionist report, USER_SUBMITTED or NUTRITIONIST_PARSED is merged on top. Conflicts are resolved in favour of the higher-authority contract. The FBDG condition-specific tables (cardiovascular, diabetes, obesity) are automatically activated when matching conditions are present in the active contract — regardless of contract type."
+  },
+
+  "llmInputContract": {
+    "requiredFields": ["reportId", "contractType", "source", "patientProfile", "constraints", "llmInstructions"],
+    "optionalFields": ["rawText", "weeklyMealPattern", "mealStructureRules", "cheatDayPolicy", "conditionTables"],
+    "injectionNote": "Serialize the active contract's llmInstructions + constraints into the Groq system prompt using the pipelineIntegration.promptInjectionTemplate. Always include the FBDG baseline. If a user contract is active, append its instructions after the FBDG instructions."
+  },
+
+  "contracts": {
+
+    "DEFAULT": {
+      "reportId": "fbdg_nigeria_2006",
+      "contractType": "DEFAULT",
+      "source": "Federal Ministry of Health Nigeria — Food-Based Dietary Guidelines for Nigeria (WHO, 2006)",
+      "createdAt": "2006-01-01T00:00:00Z",
+      "rawText": "No single food by itself (except breast-milk) provides all the nutrients in the right amounts that will promote growth and maintain life. Eat a variety of foods. Increase consumption of fruits, vegetables, grains and legumes. Increase consumption of poultry and fish. Use more fats from vegetable sources. Decrease consumption of foods high in animal fat. Decrease consumption of sugar and foods high in sugar content. Decrease consumption of salt and foods high in salt content. Drink water as much as possible daily.",
+      "patientProfile": {
+        "age": "adult",
+        "sex": null,
+        "weightKg": null,
+        "heightCm": null,
+        "activityLevel": "moderate",
+        "goal": "general_wellness"
+      },
+      "constraints": {
+        "conditions": [],
+        "generalPrinciples": [
+          "Eat a variety of foods at every meal — no single food provides all nutrients",
+          "Eat adequate diet prepared from available food items at least 3 times daily",
+          "Total food intake should reflect physical activity level",
+          "Avoid overeating"
+        ],
+        "preferredFoods": [
+          "tilapia", "stockfish", "sardine (low sodium)", "lean chicken without skin",
+          "lean turkey without skin", "snail", "bush meat (game)",
+          "beans", "cowpeas", "soyabeans", "melon seeds (egusi)", "groundnuts",
+          "locust beans", "crayfish",
+          "yam", "cassava", "plantain (unripe/green)", "sweet potato", "cocoyam",
+          "maize", "millet", "guinea corn", "rice", "whole wheat",
+          "green leafy vegetables", "pumpkin leaves", "spinach", "bitter leaf",
+          "garden egg", "garden egg leaves", "carrot", "cucumber",
+          "oranges", "guava", "pawpaw", "mango", "tangerine", "African cherry (agbalumo)",
+          "skimmed milk", "low-fat yoghurt", "local cheese (wara)",
+          "unbleached palm oil (small amounts)", "corn oil", "sunflower oil",
+          "soyabean oil", "groundnut oil"
+        ],
+        "excludedIngredients": [
+          "organ meats in excess (liver, kidney, brain/kwanya, intestine)",
+          "fatty cuts (hump/tozo, tongue, cowtail, ponmo/skin, bacon, sausage, hamburger)",
+          "full cream evaporated milk", "condensed full cream milk", "full cream powdered milk",
+          "refined sugar", "added sugar",
+          "sweetened carbonated drinks (soft drinks)",
+          "pastries (puff-puff, doughnut, chin-chin, meat pie, sausage rolls, cakes)",
+          "highly refined flour products",
+          "excess salt", "excess bullion cubes", "MSG (monosodium glutamate)",
+          "tobacco in any form",
+          "lard", "butter (excess)", "chicken fat", "turkey fat"
+        ],
+        "reduceIntake": [
+          "animal fat",
+          "salt and salty foods",
+          "bullion cubes and MSG",
+          "sugar and sugary foods",
+          "refined and processed foods",
+          "alcohol — if consumed, only in moderation"
+        ],
+        "allergensAvoid": [],
+        "macroGuards": {
+          "maxSodiumMg": null,
+          "maxSugarG": null,
+          "maxSatFatG": null,
+          "minFiberG": null,
+          "targetProteinG": null,
+          "maxCaloriesPerMeal": null,
+          "portionNotes": "Total food intake adjusted to physical activity level. Avoid second helpings."
+        },
+        "cookingMethodPreference": ["boiled", "grilled", "steamed", "stir-fried"],
+        "cookingMethodAvoid": ["deep fried", "heavy grease"],
+        "mealTimingNotes": [
+          "Eat at least 3 times daily",
+          "Do not skip meals",
+          "Drink water as much as possible throughout the day"
+        ],
+        "physicalActivity": "Adults should undertake some form of exercise as recommended by their doctor. At minimum 20 minutes, 3 times per week.",
+        "confidenceNote": null
+      },
+      "conditionTables": {
+        "_note": "These tables are extracted verbatim from the FBDG. They are activated automatically when a matching condition is present in the user's profile.",
+
+        "cardiovascular_hypertension": {
+          "activatesFor": ["cardiovascular", "hypertension", "high_cholesterol", "heart_disease"],
+          "use": {
+            "fattyFoods": ["low-fat fish (tilapia, stockfish)", "lean meat", "chicken/turkey without skin", "snail", "game (bush meat)"],
+            "dairy": ["skimmed milk", "low-fat cheese", "low-fat yoghurt"],
+            "fatsOils": ["corn oil", "sunflower oil", "soyabean oil", "groundnut oil"],
+            "fruits": ["oranges", "grapefruits", "tangerine"],
+            "fibreFoods": ["cowpeas", "beans", "broad beans", "pigeon peas", "bambara nuts", "groundnuts", "soyabeans"],
+            "starchyCereals": ["yam", "cassava", "green plantain", "rice", "guinea corn", "whole wheat", "maize", "millet"]
+          },
+          "reduceIntake": [
+            "fatty meat/fish (hump/tozo, tongue, cowtail, ponmo, bacon, sausage, hamburger, mackerel)",
+            "full-cream evaporated milk", "full-cream condensed milk", "full-cream powdered milk",
+            "oils rich in saturated fats (palm oil, coconut oil, palm kernel oil)",
+            "refined processed foods (semovita, cornvita, baking flour, spaghetti, macaroni, noodles)",
+            "avocado", "alcohol"
+          ],
+          "avoid": [
+            "organ meats (liver, kidney, brain/kwanya, intestine)",
+            "fried foods (puff-puff, doughnut, chin-chin)",
+            "pastries (meat pie, sausage rolls, chocolate, cookies, cakes)",
+            "refined sugar and foods with added sugar",
+            "sweetened carbonated drinks", "jam", "marmalade",
+            "salty foods (corned beef, sardine, bullion cubes, MSG, salted fish/meat)",
+            "adding salt to cooked food at the table",
+            "tobacco", "coconut"
+          ],
+          "cookingNotes": [
+            "Cook or boil food instead of frying",
+            "If hypertensive: reduce salt intake to the barest minimum",
+            "Exercise: strolling, brisk walking, jogging, skipping, swimming — not less than 20 minutes, 3 times a week"
+          ]
+        },
+
+        "diabetes": {
+          "activatesFor": ["diabetes", "diabetes_mellitus", "type_2_diabetes", "t2dm"],
+          "note": "Diabetes is often associated with obesity and hypertension. Apply cardiovascular guidelines simultaneously.",
+          "use": {
+            "starchyFoods": ["whole grain (maize, millet, guinea corn, acha)", "roots/tubers (water yam, Irish potatoes, bitter yam/esuru)", "unripe plantain"],
+            "sugaryFoods": ["fresh diluted fruit juices (especially lemon/lime juice)", "unsweetened tea"],
+            "vegetables": ["green leafy vegetables with every meal", "fresh vegetable-based salads", "garden egg leaves", "squeeze-washed bitter leaves", "vegetable soup", "garden eggs", "cucumber as snacks"],
+            "fattyFoods": ["low-fat fish (tilapia, stockfish/cod)", "lean meat", "chicken/turkey without skin", "snail", "game (bush meat)"],
+            "dairy": ["skimmed milk", "low-fat cheese", "yoghurt"],
+            "fatsOils": ["corn oil", "sunflower oil", "soyabean oil", "groundnut oil"],
+            "fruits": ["one or two portions of fruits in season (oranges, guava, mangoes)"]
+          },
+          "reduceIntake": [
+            "yam (regular)", "cassava (akpu, fufu)", "highly refined flour products (semolina, cassava flour)",
+            "sweet potatoes", "ripe plantain", "banana",
+            "baked beans", "tomato ketchup",
+            "oils rich in saturated fats (palm oil, coconut oil, palm kernel oil)",
+            "starchy thickeners in soups (cocoyam, yam flour, starch, garri)",
+            "salt in cooking", "salty foods (corned beef, sardine, bullion cubes/MSG)"
+          ],
+          "avoid": [
+            "sugarcane", "honey", "dates (debino)", "sugarcane sweet (alewa)",
+            "soft drinks", "ice creams", "lolly pops",
+            "cocoa-based beverages", "candies", "sweets", "marmalades", "jellies", "chocolate bars",
+            "coffee if hypertensive",
+            "fatty meat/fish (hump/tozo, tongue, cowtail, intestine, ponmo, bacon, sausage, hamburger, mackerel)",
+            "full cream evaporated milk", "condensed full cream milk", "full cream powdered milk",
+            "organ meats (liver, kidney, brain/kwanya)",
+            "butter", "ice cream",
+            "fats from animal sources (lard, butter, chicken fat, turkey fat)",
+            "avocado pear", "African pear (ube)", "coconut",
+            "alcohol", "smoking"
+          ],
+          "cookingNotes": [
+            "Cook or boil food instead of frying",
+            "Reduce salt intake, especially if hypertensive",
+            "Can have carbonated drink (soda water) but if hypertensive, consult doctor",
+            "Always take diabetes medication as prescribed",
+            "Exercise: brisk walking, swimming, cycling, dancing — at least 20 minutes, 3 times a week (under medical supervision)"
+          ]
+        },
+
+        "obesity_weight_loss": {
+          "activatesFor": ["obesity", "weight_loss", "overweight", "weight_management"],
+          "generalNote": "Maintain body weight appropriate for age and size by controlling total food intake. Water intake may be increased to control appetite. Reduce second helpings. Eat slowly.",
+          "use": {
+            "starchyFoods": ["whole grains (corn, millet, guinea corn)", "roots and tubers (yam, cocoyam, cassava)"],
+            "sugaryFoods": ["fresh unsweetened diluted fruit juice (especially lemon/lime)", "unsweetened carbonated water (soda water)"],
+            "legumesNuts": ["beans", "soyabean flour (foods containing soluble fibre)"],
+            "vegetables": ["more vegetables at each meal", "garden eggs", "garden egg leaves", "cucumber", "carrots", "fresh vegetable salad", "green vegetables", "squeeze-washed bitter leaves", "zogale leaves"],
+            "fruits": ["one or two portions of fruits daily (oranges, grapefruits, any fruits in season)"],
+            "fattyFoods": ["low-fat fish (tilapia, stockfish, sawa)", "lean meat", "chicken/turkey without skin", "snail", "game (bush meat)"],
+            "dairy": ["skimmed milk", "low-fat cheese", "low-fat yoghurt"],
+            "fatsOils": ["corn oil", "sunflower oil", "soyabean oil", "groundnut oil", "margarine"]
+          },
+          "reduceIntake": [
+            "refined cereals and tubers (wheat flour, cassava flour/elubo, yam flour)",
+            "baked beans", "tomato ketchup", "canned fruits and juices",
+            "nuts (coconut, groundnut, palm kernel nuts)",
+            "fatty meat/fish (hump/tozo, tongue, cowtail, ponmo, bacon, sausage, hamburger, mackerel)",
+            "full cream evaporated milk", "condensed milk", "local cheese (wara) full cream", "full cream powdered milk",
+            "oils rich in saturated fats (palm oil, coconut oil, palm kernel oil)"
+          ],
+          "avoid": [
+            "pastries (buns, puff-puff, meat pie, cakes)",
+            "sugarcane", "honey", "dates (debino)", "sugarcane sweet (alewa)",
+            "soft drinks", "chocolate drinks", "ice creams", "lolly pops",
+            "cocoa-based beverages", "candies", "sweets", "marmalades", "jam", "jellies", "chocolate bars",
+            "avocado pear", "African pear (ube)",
+            "organ meats (liver, kidney, brain/kwanya) — especially if blood cholesterol is high",
+            "animal fat", "butter",
+            "fats from animal sources (chicken fat, turkey fat, lards, butter)",
+            "drinking alcohol", "smoking tobacco"
+          ],
+          "cookingNotes": [
+            "Cook and boil food instead of frying",
+            "Exercise regularly: at least 20 minutes, 3 times per week — brisk walking, swimming, climbing stairs, skipping, jogging",
+            "Ensure regular weight monitoring",
+            "Eat while sitting — avoid eating on the run",
+            "Eat slowly to allow satiety signals to reach the brain",
+            "Do not skip meals — weight recycling and meal skipping are not desirable"
+          ]
+        }
+      },
+      "llmInstructions": [
+        "You are applying the official Federal Ministry of Health Nigeria Food-Based Dietary Guidelines (FBDG, WHO 2006) as the baseline nutrition standard for this Nigerian user.",
+        "Always recommend a variety of foods — no single food is sufficient on its own.",
+        "Prioritise: lean fish (tilapia, stockfish), skinless poultry, legumes (beans, cowpeas, soyabeans), green leafy vegetables, seasonal fruits, whole grains and tubers.",
+        "Always reduce: excess salt, bullion cubes, MSG, refined sugar, sugary drinks, animal fat, highly processed foods.",
+        "Always avoid recommending: organ meats in excess, fatty cuts (ponmo, sausage, bacon, hamburger), full cream dairy, deep fried foods (puff-puff, chin-chin, doughnuts), pastries (meat pie, sausage roll, cakes), sweetened carbonated drinks, tobacco.",
+        "Preferred cooking methods: boiling, grilling, steaming, stir-frying. Never recommend deep frying as a preparation method.",
+        "Palm oil is acceptable in small, measured amounts (unbleached). Do not present palm oil as a health food or recommend it freely — FBDG classifies it as a saturated fat to reduce.",
+        "If the user has cardiovascular disease or hypertension: activate cardiovascular_hypertension condition table. Reduce salt to the barest minimum. Avoid all saturated fats, fried foods, and salty condiments.",
+        "If the user has diabetes: activate diabetes condition table. Prioritise whole grains, unripe plantain, bitter leaf, garden egg. Avoid all sugary foods, ripe plantain, banana, sweet potato, refined flour products, and soft drinks entirely.",
+        "If the user has obesity or weight_loss goal: activate obesity_weight_loss condition table. Increase vegetables and fibre, reduce refined carbohydrates, avoid all pastries and sugary drinks, emphasise portion control and boiling over frying.",
+        "When multiple conditions are present (e.g. diabetes + hypertension): apply both condition tables simultaneously. The more restrictive rule always wins.",
+        "For local Nigerian canteens: swallow (fist size) + vegetable soup is FBDG-compliant at lunch. Recommend requesting soup without excess stock cubes.",
+        "For pepper soup venues: fish pepper soup and chicken pepper soup are FBDG-compliant choices. Flag if broth may contain excess MSG or salt.",
+        "For fast food chains: grilled chicken without skin is the safest option. Fried chicken, chips, and soft drinks all conflict with FBDG.",
+        "Always ground recommendations in Nigerian food culture and name Nigerian dishes correctly."
+      ]
+    },
+
+    "NUTRITIONIST_PARSED": {
+      "_comment": "Populated when a professional nutritionist report is uploaded. Example below is from Ask Damz — Dr Oluwadamilola (Silver Package, Weight Loss Plan). Replace with actual extracted values per user.",
+      "reportId": "askdamz_dr_oluwadamilola_001",
+      "contractType": "NUTRITIONIST_PARSED",
+      "source": "Ask Damz — Dr Oluwadamilola (Silver Package, Weight Loss Plan)",
+      "createdAt": "2026-05-02T00:00:00Z",
+      "fbdgAlignment": {
+        "note": "This plan is broadly aligned with FBDG obesity/weight_loss guidelines. Where they conflict, this nutritionist plan takes precedence. FBDG baseline still applies for any food not addressed by this plan.",
+        "overrides": [
+          "Dinner rule (no protein + carbs) is stricter than FBDG — enforced from this contract",
+          "Preferred oils (avocado, coconut, extra virgin olive oil) override FBDG's preferred oils for this user",
+          "Sweeteners (stevia, monk fruit only) override FBDG's general sugar-reduction guidance"
+        ]
+      },
+      "rawText": "Each meal should fit into one plate. Half the plate should be vegetables, a quarter of the plate should be proteins and the rest of the plate should be carbohydrates and fats. You must drink at least 1/1.5 litres of water every day. No deep greasy food and No refined sugar in any form whether brown or white in this process. Do not mix proteins and carbs for dinner ever. Snacks could be fruits, protein and vegetables. Each snack should fit into one palm. The recommended cooking oils are avocado oil, coconut oil, extra virgin olive oil, use a tablespoon or teaspoon for measure. Spaghetti pack should be divided into four portions and half a portion should be used. Portion control is very important.",
+      "patientProfile": {
+        "age": null,
+        "sex": null,
+        "weightKg": null,
+        "heightCm": null,
+        "activityLevel": "moderate",
+        "goal": "weight_loss",
+        "activityNotes": "30-45 minutes physical activity, 3-4 days per week."
+      },
+      "constraints": {
+        "conditions": ["weight_loss"],
+        "excludedIngredients": [
+          "refined sugar", "brown sugar", "white sugar",
+          "deep fried foods", "greasy food"
+        ],
+        "allergensAvoid": [],
+        "preferredFoods": [
+          "skinless chicken", "grilled fish", "lean beef", "turkey",
+          "boiled eggs", "leafy vegetables", "bell peppers", "carrot",
+          "cabbage", "cucumber", "tomatoes", "sweet potato", "beans",
+          "oatmeal", "Greek yoghurt", "avocado"
+        ],
+        "preferredSweeteners": ["stevia", "monk fruit"],
+        "preferredCookingOils": ["avocado oil", "coconut oil", "extra virgin olive oil"],
+        "macroGuards": {
+          "maxSodiumMg": null,
+          "maxSugarG": null,
+          "maxSatFatG": null,
+          "minFiberG": null,
+          "targetProteinG": null,
+          "maxCaloriesPerMeal": null,
+          "portionNotes": "Half plate vegetables, quarter plate protein, quarter plate carbs+fats. Snack fits in one palm. Swallow: fist size. Spaghetti: one eighth of standard pack."
+        },
+        "portionRules": [
+          "Half plate must be vegetables at every main meal",
+          "Quarter plate protein",
+          "Quarter plate carbohydrates and fats",
+          "Swallow: fist size only",
+          "Spaghetti: one eighth of a standard pack per serving",
+          "Snack must fit in one palm",
+          "Skinless chicken: 2 medium pieces per meal",
+          "Fish: 2 medium pieces per meal",
+          "Greek yoghurt: 125ml",
+          "Oatmeal: 1 cup cooked",
+          "Rice: 1 cup cooked",
+          "Beans: 1 cup cooked"
+        ],
+        "dinnerRules": [
+          "STRICT: Never mix protein and carbohydrates at dinner",
+          "Acceptable dinners: pepper soup, grilled chicken with salad, egg salad, vegetable soup without swallow, avocado salad, stir fry without rice or swallow",
+          "No rice, yam, plantain, potato, pasta, or any swallow at dinner"
+        ],
+        "snackRules": [
+          "Snacks limited to fruits, protein, vegetables",
+          "Each snack must fit in one palm",
+          "Acceptable snacks: apple, carrot, pineapple, watermelon, cucumber, grape, avocado, 2 boiled eggs"
+        ],
+        "cookingMethodPreference": ["grilled", "boiled", "steamed", "stir-fried", "oil-less"],
+        "cookingMethodAvoid": ["deep fried", "deep greasy"],
+        "contraindications": [
+          "No refined sugar in any form at any meal",
+          "No deep fried or greasy food",
+          "Never mix protein and carbs at dinner",
+          "No sugary drinks"
+        ],
+        "cheatDayPolicy": {
+          "allowed": true,
+          "frequency": "weekly",
+          "day": "Saturday",
+          "rule": "Cheat moderately. Notify nutritionist before cheating."
+        },
+        "confidenceNote": null
+      },
+      "llmInstructions": [
+        "This user is on a supervised Nigerian weight loss plan (Ask Damz, Dr Oluwadamilola). Apply FBDG obesity guidelines as baseline PLUS these additional rules.",
+        "DINNER IS STRICTLY PROTEIN AND VEGETABLES ONLY — never recommend rice, yam, plantain, swallow, pasta, or any carbohydrate at dinner.",
+        "Never recommend deep fried food, refined sugar, or sugary drinks.",
+        "Preferred proteins: skinless chicken (grilled/boiled), fish (grilled/boiled/pepper soup), lean beef, turkey, eggs.",
+        "Portion sizes are mandatory: 2 medium pieces protein per meal, half plate vegetables.",
+        "For pepper soup venues: fish pepper soup and chicken pepper soup are ideal dinner choices — fully compliant.",
+        "For fast food chains: grilled chicken only. Reject fried chicken, chips, and all drinks except water.",
+        "For local canteens: swallow + vegetable soup is acceptable at LUNCH only. Never at dinner.",
+        "Cheat day is Saturday — acknowledge flexibility but still avoid deep fried and refined sugar.",
+        "Cooking oils: avocado oil, coconut oil, extra virgin olive oil in measured amounts only."
+      ]
+    },
+
+    "USER_SUBMITTED_TEMPLATE": {
+      "_comment": "Shell populated when a user uploads their own nutritionist report. Parsed by LLM using userReportParsingPrompt. The fbdgAlignment block must always be filled — it records which FBDG rules this report overrides vs aligns with.",
+      "reportId": null,
+      "contractType": "USER_SUBMITTED",
+      "source": "user_uploaded",
+      "createdAt": null,
+      "fbdgAlignment": {
+        "note": null,
+        "overrides": []
+      },
+      "rawText": null,
+      "patientProfile": {
+        "age": null,
+        "sex": null,
+        "weightKg": null,
+        "heightCm": null,
+        "activityLevel": null,
+        "goal": null,
+        "activityNotes": null
+      },
+      "constraints": {
+        "conditions": [],
+        "excludedIngredients": [],
+        "allergensAvoid": [],
+        "preferredFoods": [],
+        "preferredSweeteners": [],
+        "preferredCookingOils": [],
+        "macroGuards": {
+          "maxSodiumMg": null,
+          "maxSugarG": null,
+          "maxSatFatG": null,
+          "minFiberG": null,
+          "targetProteinG": null,
+          "maxCaloriesPerMeal": null,
+          "portionNotes": null
+        },
+        "portionRules": [],
+        "mealTimingNotes": [],
+        "dinnerRules": [],
+        "breakfastOptions": [],
+        "snackRules": [],
+        "cookingMethodPreference": [],
+        "cookingMethodAvoid": [],
+        "contraindications": [],
+        "cheatDayPolicy": null,
+        "confidenceNote": "User-submitted report — AI extracted. Verify critical constraints before clinical use. FBDG baseline remains active."
+      },
+      "llmInstructions": []
+    }
+  },
+
+  "backendNormalization": {
+    "conditionAliases": {
+      "type 2 diabetes": "diabetes",
+      "type 1 diabetes": "diabetes",
+      "t2dm": "diabetes",
+      "t1dm": "diabetes",
+      "sugar diabetes": "diabetes",
+      "high blood pressure": "hypertension",
+      "hbp": "hypertension",
+      "elevated blood pressure": "hypertension",
+      "cardiovascular disease": "cardiovascular",
+      "heart disease": "cardiovascular",
+      "high cholesterol": "cardiovascular",
+      "hypercholesterolaemia": "cardiovascular",
+      "stroke risk": "cardiovascular",
+      "overweight": "weight_loss",
+      "obesity": "weight_loss",
+      "weight management": "weight_loss",
+      "slimming": "weight_loss",
+      "fat loss": "weight_loss",
+      "kidney disease": "kidney_disease",
+      "chronic kidney disease": "kidney_disease",
+      "ckd": "kidney_disease",
+      "anaemia": "anaemia",
+      "anemia": "anaemia",
+      "gerd": "acid_reflux",
+      "acid reflux": "acid_reflux",
+      "ibs": "ibs",
+      "irritable bowel syndrome": "ibs"
+    },
+    "fbdgConditionTableMap": {
+      "cardiovascular":  "cardiovascular_hypertension",
+      "hypertension":    "cardiovascular_hypertension",
+      "high_cholesterol":"cardiovascular_hypertension",
+      "heart_disease":   "cardiovascular_hypertension",
+      "diabetes":        "diabetes",
+      "weight_loss":     "obesity_weight_loss",
+      "obesity":         "obesity_weight_loss"
+    },
+    "unknownHandling": {
+      "string": null,
+      "number": null,
+      "array": [],
+      "boolean": null
+    }
+  },
+
+  "userReportParsingPrompt": {
+    "_comment": "Send this to the LLM when a user uploads their own nutritionist report. Replace {{REPORT_TEXT}} with the extracted document text. The LLM returns a populated USER_SUBMITTED contract.",
+    "systemPrompt": "You are a clinical nutrition data extractor for a Nigerian health app.\nYour job is to read a nutritionist report or meal plan and extract structured data into a precise JSON format.\n\nEXTRACTION RULES:\n1. Extract what is explicitly stated AND infer conditions from goal language.\n2. Use the goal-to-condition mapping table below — this is mandatory, not optional.\n3. Unknown values: null for strings/numbers, [] for arrays.\n4. The Nigerian FBDG (Federal Ministry of Health, WHO 2006) is always the baseline.\n   Your job is only to extract what this specific report ADDS or OVERRIDES on top of that baseline.\n\nGOAL-TO-CONDITION MAPPING (always apply this):\n\"lose weight\" | \"weight loss\" | \"slimming\" | \"slim down\" | \"fat loss\" | \"reduce weight\" | \"weight management\" | \"obese\" | \"overweight\"\n  -> conditions: [\"weight_loss\"], goal: \"weight_loss\"\n\n\"diabetes\" | \"diabetic\" | \"blood sugar\" | \"sugar level\" | \"glucose\" | \"t2dm\" | \"type 2\"\n  -> conditions: [\"diabetes\"], goal: \"diabetes_management\"\n\n\"blood pressure\" | \"hypertension\" | \"hbp\" | \"high bp\" | \"pressure\"\n  -> conditions: [\"hypertension\"], goal: \"hypertension_management\"\n\n\"heart\" | \"cardiovascular\" | \"cholesterol\" | \"cardiac\"\n  -> conditions: [\"cardiovascular\"], goal: \"cardiovascular_health\"\n\n\"muscle\" | \"build muscle\" | \"gain muscle\" | \"bulk\"\n  -> conditions: [], goal: \"muscle_gain\"\n\n\"general wellness\" | \"healthy eating\" | \"balanced diet\" | \"eat healthy\"\n  -> conditions: [], goal: \"general_wellness\"\n\nIf the document contains multiple goal signals, include all matching conditions.\nFor example \"diabetic patient trying to lose weight\" -> conditions: [\"diabetes\", \"weight_loss\"]",
+    "userPrompt": "Read the following nutritionist report carefully.\n\nSTEP 1 — Before writing any JSON, identify:\na) What is the primary goal of this plan? (weight loss / diabetes management / etc.)\nb) What conditions or health goals are mentioned, implied, or addressed?\nc) Map each to the normalized condition labels from the mapping table.\n\nSTEP 2 — Extract all information into this exact JSON structure.\nFill every field you can find evidence for. Leave fields null or [] if genuinely not mentioned.\nGenerate llmInstructions: 5-10 imperative sentences the AI should follow when filtering\nrestaurant meals for this user. Base them strictly on what the nutritionist wrote.\nFill fbdgAlignment.overrides with any rules in this report that differ from standard FBDG guidance.\n\nReturn ONLY the JSON — no markdown, no explanation, no preamble.\n\nTarget structure:\n{\n  \"reportId\": \"user_report_{{timestamp}}\",\n  \"contractType\": \"USER_SUBMITTED\",\n  \"source\": \"user_uploaded\",\n  \"createdAt\": \"{{current ISO timestamp}}\",\n  \"fbdgAlignment\": {\n    \"note\": \"brief sentence on how this plan relates to FBDG\",\n    \"overrides\": []\n  },\n  \"rawText\": \"{{first 500 chars of document}}\",\n  \"patientProfile\": {\n    \"age\": null,\n    \"sex\": null,\n    \"weightKg\": null,\n    \"heightCm\": null,\n    \"activityLevel\": null,\n    \"goal\": null,\n    \"activityNotes\": null\n  },\n  \"constraints\": {\n    \"conditions\": [],\n    \"excludedIngredients\": [],\n    \"allergensAvoid\": [],\n    \"preferredFoods\": [],\n    \"preferredSweeteners\": [],\n    \"preferredCookingOils\": [],\n    \"macroGuards\": {\n      \"maxSodiumMg\": null,\n      \"maxSugarG\": null,\n      \"maxSatFatG\": null,\n      \"minFiberG\": null,\n      \"targetProteinG\": null,\n      \"maxCaloriesPerMeal\": null,\n      \"portionNotes\": null\n    },\n    \"portionRules\": [],\n    \"mealTimingNotes\": [],\n    \"dinnerRules\": [],\n    \"breakfastOptions\": [],\n    \"snackRules\": [],\n    \"cookingMethodPreference\": [],\n    \"cookingMethodAvoid\": [],\n    \"contraindications\": [],\n    \"cheatDayPolicy\": null,\n    \"confidenceNote\": \"User-submitted report — AI extracted. FBDG baseline remains active.\"\n  },\n  \"llmInstructions\": []\n}\n\nNutritionist report text:\n{{REPORT_TEXT}}"
+  },
+
+  "pipelineIntegration": {
+    "_comment": "How nutrifence_pipeline.js injects the active contract into the Groq explainWithGroq() call.",
+    "stepWhereApplied": "Step 5 — explainWithGroq() in nutrifence_pipeline.js",
+    "activeContractResolution": "Load DEFAULT (FBDG) always. If user has a NUTRITIONIST_PARSED or USER_SUBMITTED contract, merge it on top. Activate matching FBDG conditionTables for any conditions present across both contracts.",
+    "promptInjectionTemplate": "ACTIVE NUTRITION CONTRACT:\nAuthority: {{contractType}} — {{source}}\nUser goal: {{patientProfile.goal}}\nConditions: {{constraints.conditions}}\n\nFBDG BASELINE RULES (always active):\n{{DEFAULT.llmInstructions joined by newline}}\n\n{{IF conditions match FBDG conditionTables}}CONDITION-SPECIFIC FBDG RULES ({{conditionTable key}}):\nUSE: {{conditionTable.use}}\nREDUCE: {{conditionTable.reduceIntake}}\nAVOID: {{conditionTable.avoid}}\nCOOKING NOTES: {{conditionTable.cookingNotes}}\n{{END IF}}\n\n{{IF userContract exists}}USER NUTRITIONIST REPORT RULES (override FBDG where they conflict):\n{{userContract.llmInstructions joined by newline}}\nAdditional hard exclusions: {{userContract.constraints.contraindications}}\nDinner rules: {{userContract.constraints.dinnerRules}}\nPortion rules: {{userContract.constraints.portionRules}}\n{{END IF}}"
+  }
+}
