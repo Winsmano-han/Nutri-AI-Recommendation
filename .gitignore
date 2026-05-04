@@ -2,3 +2,14 @@
 .env
 *.env
 scraper/.env
+
+# runtime / generated artifacts
+__pycache__/
+*.pyc
+scraper/__pycache__/
+scraper/*.log
+scraper/recommendations_*.json
+scraper/ab_*.json
+scraper/ab_comparison.txt
+scraper/user_contract_active.json
+doc_*_extracted_preview.txt
