@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: nutrifence-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      chmod +x start.sh
+    startCommand: ./start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: NODE_VERSION
+        value: 18.0.0
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: MODEL_API_URL
+        value: http://127.0.0.1:8011
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: PYTHONPATH
+        value: ./best_models_bundle
+      - key: DISH_MODEL_PATH
+        value: ./best_models_bundle/models/recommender_nigeria_dishes_extended.joblib
+      - key: FOOD_MODEL_PATH
+        value: ./best_models_bundle/models/recommender_nigeria.joblib
+    healthCheckPath: /health
