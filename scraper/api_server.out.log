@@ -1,0 +1,8 @@
+Nutrifence API server running at http://127.0.0.1:8090
+📄 Ingesting report: C:\Users\DELL\AppData\Local\Temp\nutrifence_report_smoke_user_1777836880346.txt
+  Extracted 101 chars
+  Conditions: weight_loss
+  LLM instructions: 10
+✅ Contract saved for user smoke_user: C:\Users\DELL\Desktop\Nutri-Recommendation\scraper\user_contract_active.json
+📄 Ingesting report: C:\Users\DELL\AppData\Local\Temp\nutrifence_report_smoke_user2_1777837595065.txt
+  Extracted 64 chars

@@ -4,8 +4,9 @@
   "description": "Scrapes real Lagos restaurant menus using Google Maps + Claude AI",
   "type": "module",
   "scripts": {
-    "start": "node scrape_menus.js",
-    "scrape": "node scrape_menus.js"
+    "start": "node scraper/nutrifence_pipeline.js",
+    "scrape": "node scraper/nutrifence_pipeline.js",
+    "api": "node scraper/api_server.js"
   },
   "engines": {
     "node": ">=18.0.0"

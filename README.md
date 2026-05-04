@@ -1,120 +1,257 @@
-# Nutrifence — Lagos Menu Scraper
+# Nutri-AI-Recommendation
 
-This script generates a real `menu_lagos.json` for the Nutrifence Flutter app by:
+Production-oriented Nigerian restaurant recommendation pipeline with:
+- Google Places venue discovery
+- Local ML model serving (`.joblib`) for dish ranking
+- Groq-based clinical filtering and explanation
+- Contract-driven nutrition rules (FBDG + uploaded nutritionist plans)
 
-1. Searching Google Maps for restaurants across 4 Lagos areas (Lagos Island, VI, Ikeja, Lekki)
-2. Fetching place details for each one (address, website, cuisine info)
-3. Attempting to fetch and read each restaurant's website/menu page
-4. Sending all that context to Groq AI to extract structured menu items
-5. Outputting `menu_lagos.json` in the exact format the Flutter app expects
+## What This Project Does
+
+Given a user location and profile:
+1. Finds nearby restaurants using Google Places.
+2. Classifies each venue into a restaurant archetype.
+3. Queries a local FastAPI model server for ranked dish candidates.
+4. Applies nutrition policy via active contract (FBDG baseline + optional user report overrides).
+5. Uses Groq to produce structured `safeOrders`, `avoid`, and `tip`.
+6. Writes recommendation JSON ready for mobile/web consumption.
 
 ---
 
-## Setup
+## Repository Structure
 
-### Requirements
-- Node.js 18+
-- A Google Maps API key (same one from the Flutter app's `assets/env/maps.env`)
-- A Groq API key (get one at https://console.groq.com)
+- `best_models_bundle/`
+  - `models/recommender_nigeria.joblib`
+  - `models/recommender_nigeria_dishes_extended.joblib`
+  - `utils/recommender.py` (food recommender logic)
+  - `utils/dish_recommender.py` (dish recommender logic)
+  - training/inference scripts
+- `scraper/`
+  - `model_server.py` (FastAPI server for model inference + PDF extraction)
+  - `nutrifence_pipeline.js` (main recommendation pipeline)
+  - `nutrition_contract.json` (nutrition policy contract definitions)
+  - `report_ingestion.js` (nutritionist report -> active contract)
+  - `run_ab_test.js` (paced 4-profile condition A/B test runner)
 
-### Make sure these APIs are enabled in Google Cloud Console
-- **Places API** (for nearby search + place details)
+---
 
-### Steps
+## Requirements
+
+- Node.js 18+ (for built-in `fetch`)
+- Python 3.10+ (recommended)
+- Google Places API key
+- Groq API key
+
+Install Python dependencies:
 
 ```bash
-# 1. Go into this folder
-cd scraper/
-
-# 2. Copy the example env file and fill in your keys
-cp ../env.example .env
-# Edit .env and add your GOOGLE_MAPS_API_KEY and GROQ_API_KEY
-
-# 3. Run it (no npm install needed — uses only Node built-ins)
-node scrape_menus.js
+pip install -r requirements.txt
 ```
 
-That's it. No dependencies to install — the script uses only Node's built-in `fetch` (available since Node 18).
+`requirements.txt` includes:
+- `fastapi`
+- `uvicorn`
+- `joblib`
+- `scikit-learn`
+- `pandas`
+- `numpy`
+- `python-multipart`
+- `pdfplumber`
 
 ---
 
-## Output
+## Environment Configuration
 
-The script writes `menu_lagos.json` in the same folder. Drop it into:
+Create `scraper/.env`:
 
+```env
+GOOGLE_MAPS_API_KEY=your_google_maps_key
+GROQ_API_KEY=your_groq_key
+MODEL_API_URL=http://127.0.0.1:8011
+
+# Optional runtime overrides
+USER_LAT=7.3622
+USER_LNG=3.8503
+SEARCH_RADIUS=1500
+MAX_RESTAURANTS=5
 ```
-your_flutter_project/assets/mock/menu_lagos.json
-```
 
-The Flutter app will pick it up automatically — no code changes needed.
+Notes:
+- `nutrifence_pipeline.js`, `report_ingestion.js`, and `run_ab_test.js` load `scraper/.env`.
+- You can still override with shell env vars at runtime.
 
 ---
 
-## Output JSON structure
+## Start the Model Server
+
+From project root:
+
+```bash
+cd scraper
+set PYTHONPATH=..\\best_models_bundle
+set DISH_MODEL_PATH=..\\best_models_bundle\\models\\recommender_nigeria_dishes_extended.joblib
+set FOOD_MODEL_PATH=..\\best_models_bundle\\models\\recommender_nigeria.joblib
+python -m uvicorn model_server:app --host 127.0.0.1 --port 8011
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8011/health
+```
+
+Available API endpoints:
+- `GET /health`
+- `POST /recommend`
+- `POST /recommend/batch`
+- `POST /recommend/food`
+- `POST /extract-pdf`
+
+---
+
+## Start the API Wrapper (HTTP Endpoints for App)
+
+This wrapper exposes app-facing endpoints and calls the pipeline/ingestion modules:
+
+```bash
+npm run api
+```
+
+Default:
+- Host: `127.0.0.1`
+- Port: `8090`
+
+Open wrapper endpoints:
+- `GET /health`
+- `POST /api/recommendations`
+- `POST /api/ingest-report`
+
+`POST /api/recommendations` request example:
 
 ```json
 {
-  "_meta": { ... },
-  "venues": [
-    {
-      "id": "ChIJ...",          // Google Place ID
-      "name": "Yellow Chilli",
-      "address": "...",
-      "lat": 6.4281,
-      "lng": 3.4219,
-      "cuisineTags": ["nigerian", "continental"],
-      "rating": 4.2,
-      "priceLevel": 2,
-      "website": "https://..."
-    }
-  ],
-  "menus": {
-    "ChIJ...": [
-      {
-        "id": "yellow_chilli_001",
-        "name": "Jollof Rice with Chicken",
-        "description": "...",
-        "ingredients": ["rice", "tomato", "chicken", ...],
-        "allergens": [],
-        "cuisineTags": ["nigerian"],
-        "nutritionPer100g": {
-          "calories": 180,
-          "proteinG": 12,
-          "carbsG": 24,
-          "fatG": 5,
-          "sodiumMg": 420,
-          "sugarG": 2,
-          "fiberG": 1
-        },
-        "priceNaira": 3500,
-        "isVegetarian": false,
-        "isVegan": false,
-        "spiceLevel": "medium"
-      }
-    ]
+  "lat": 7.3622,
+  "lng": 3.8503,
+  "radius": 1500,
+  "maxRestaurants": 5,
+  "userProfile": {
+    "conditions": ["diabetes"],
+    "restrictions": ["low sugar"]
   }
 }
 ```
 
----
-
-## Tuning
-
-Edit the config block at the top of `scrape_menus.js`:
-
-| Constant | Default | What it does |
-|---|---|---|
-| `SEARCH_RADIUS` | `5000` | Radius in metres per search |
-| `TARGET_RESTAURANT_COUNT` | `30` | How many restaurants to process |
-| `searchCenters` | 4 Lagos areas | Where to search — add more for broader coverage |
+`POST /api/ingest-report` supports:
+- JSON text mode: `{ "userId": "...", "reportText": "..." }`
+- JSON path mode: `{ "userId": "...", "reportPath": "C:\\\\path\\\\report.pdf" }`
 
 ---
 
-## Notes
+## Run the Main Recommendation Pipeline
 
-- The script is rate-aware: it adds short delays between API calls to avoid hitting Google's QPS limits.
-- If no clear menu evidence is available for a restaurant, the scraper returns no items for that venue instead of inventing data.
-- If Groq returns malformed JSON, the script does a second repair pass automatically.
-- The `_meta` block is ignored by the Flutter app's `MockVenueMenuRepository` — it's just for your reference.
+```bash
+cd scraper
+node nutrifence_pipeline.js
+```
 
-# Nutri-AI-Recommendation
+Output:
+- `scraper/recommendations_<timestamp>.json`
+
+JSON shape:
+- `_meta`
+- `venues[]`
+- `recommendations[place_id]`
+  - `modelRecommendations[]`
+  - `safeOrders[]`
+  - `avoid[]`
+  - `tip`
+  - `confidenceNote`
+
+---
+
+## Nutrition Contract System
+
+Contract source file:
+- `scraper/nutrition_contract.json`
+
+Active behavior:
+1. DEFAULT FBDG contract is always active.
+2. User conditions map to condition tables (e.g., diabetes/hypertension).
+3. If `user_contract_active.json` exists, user nutritionist rules are layered on top.
+
+Implemented condition tables today:
+- `cardiovascular_hypertension`
+- `diabetes`
+- `obesity_weight_loss`
+
+---
+
+## Ingest a Nutritionist Report
+
+Convert user PDF/TXT into active user contract:
+
+```bash
+cd scraper
+node report_ingestion.js "C:\\path\\to\\report.pdf" user_001
+```
+
+Result:
+- `scraper/user_contract_active.json`
+
+This file is consumed automatically by `nutrifence_pipeline.js`.
+
+---
+
+## Run Condition A/B Tests (Rate-Limit Safe)
+
+```bash
+cd scraper
+node run_ab_test.js
+```
+
+Generated files:
+- `ab_baseline.json`
+- `ab_diabetes.json`
+- `ab_hypertension.json`
+- `ab_both.json`
+- `ab_comparison.txt`
+
+The runner spaces runs with cooldown to reduce Groq rate-limit failures.
+
+---
+
+## Notes for Mobile/Web Integration
+
+Current deployment model is backend-first:
+- Mobile/web sends user location/profile (and eventually userId).
+- Backend runs pipeline and returns structured recommendation cards.
+
+Implemented API wrapper endpoints (Node):
+- `POST /api/recommendations`
+- `POST /api/ingest-report`
+- `GET /health` (wrapper health)
+
+Minimal request contract for upstream API layer:
+
+```json
+{
+  "lat": 7.3622,
+  "lng": 3.8503,
+  "radius": 1500,
+  "userProfile": {
+    "conditions": ["diabetes"],
+    "restrictions": ["low sugar"]
+  }
+}
+```
+
+Future production upgrade:
+- resolve `userId` -> fetch user-specific active contract from DB instead of local file.
+
+---
+
+## Known Operational Guidance
+
+- If model server is down, pipeline degrades to Groq-only recommendations.
+- If Groq returns `429`, retry/backoff is built into pipeline Groq calls.
+- For stable outputs in tests, keep `MAX_RESTAURANTS` small and use fixed location/radius.

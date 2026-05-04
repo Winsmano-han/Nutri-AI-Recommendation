@@ -21,7 +21,7 @@ The new system **never scrapes anything**. Instead it reasons from:
 ```
 Flutter app
     │
-    │  POST /pipeline/recommend
+    │  POST /api/recommendations
     │  { lat, lng, radius, userProfile }
     ▼
 ┌─────────────────────────────────────────┐
@@ -226,7 +226,7 @@ The Flutter app only needs to:
 |---|---|---|---|
 | `GOOGLE_MAPS_API_KEY` | ✅ Yes | — | Google Maps API key |
 | `GROQ_API_KEY` | ✅ Yes | — | Groq API key (free at console.groq.com) |
-| `MODEL_API_URL` | No | `http://localhost:8000` | FastAPI model server URL |
+| `MODEL_API_URL` | No | `http://127.0.0.1:8011` | FastAPI model server URL |
 | `USER_LAT` | No | `7.3775` | User latitude (Ibadan default) |
 | `USER_LNG` | No | `3.9470` | User longitude (Ibadan default) |
 | `SEARCH_RADIUS` | No | `2000` | Search radius in metres |
@@ -238,15 +238,19 @@ The Flutter app only needs to:
 
 ---
 
-## Supported health conditions (model-level filtering)
+## Supported health conditions (implemented today)
 
-These are passed directly to the `.joblib` models which handle them natively:
+Model-native condition filters:
 - `diabetes` — removes high-risk flagged items and high sugar/carb dishes
 - `hypertension` — removes high-risk flagged items and high sodium dishes
 
-Other conditions (obesity, kidney disease, high cholesterol) are handled at
-the Groq explanation layer — the AI reasons about them even though the model
-doesn't filter them natively.
+Contract condition tables currently implemented and injected into Groq:
+- `cardiovascular_hypertension`
+- `diabetes`
+- `obesity_weight_loss`
+
+Conditions outside these tables are currently handled by generic FBDG baseline
+instructions unless additional rule tables are added.
 
 ---
 
