@@ -5,6 +5,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import http from "http";
+import https from "https";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { ingestReport } from "./report_ingestion.js";
@@ -31,6 +32,7 @@ loadDotEnv();
 
 const HOST = process.env.API_HOST || "127.0.0.1";
 const PORT = parseInt(process.env.API_PORT || "8090", 10);
+const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8011").replace(/\/$/, "");
 
 function json(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -59,6 +61,37 @@ function readJsonBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function proxyToModelServer(req, res, targetPath) {
+  const target = new URL(`${MODEL_API_URL}${targetPath}`);
+  const client = target.protocol === "https:" ? https : http;
+  const headers = { ...req.headers, host: target.host };
+
+  const proxyReq = client.request(
+    {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port,
+      path: `${target.pathname}${target.search}`,
+      method: req.method,
+      headers,
+    },
+    (proxyRes) => {
+      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+      proxyRes.pipe(res);
+    }
+  );
+
+  proxyReq.on("error", (err) => {
+    json(res, 502, {
+      error: "Model server proxy failed",
+      detail: err.message,
+      modelApiUrl: MODEL_API_URL,
+    });
+  });
+
+  req.pipe(proxyReq);
 }
 
 function listRecommendationOutputs() {
@@ -106,6 +139,19 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && req.url === "/health") {
       return json(res, 200, { status: "ok", service: "nutrifence-api", port: PORT });
+    }
+
+    if (req.method === "GET" && req.url === "/model/health") {
+      return proxyToModelServer(req, res, "/health");
+    }
+
+    if (
+      req.url === "/recommend" ||
+      req.url === "/recommend/batch" ||
+      req.url === "/recommend/food" ||
+      req.url === "/extract-pdf"
+    ) {
+      return proxyToModelServer(req, res, req.url);
     }
 
     if (req.method === "POST" && req.url === "/api/recommendations") {
@@ -166,4 +212,3 @@ server.listen(PORT, HOST, () => {
   // eslint-disable-next-line no-console
   console.log(`Nutrifence API server running at http://${HOST}:${PORT}`);
 });
-

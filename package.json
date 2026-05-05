@@ -4,9 +4,12 @@
   "description": "Nutrifence Nigerian food recommendation API",
   "type": "module",
   "scripts": {
-    "start": "node scraper/api_server.js",
+    "postinstall": "node scripts/install_python_deps.js",
+    "start": "node scripts/render_start.js",
     "scrape": "node scraper/nutrifence_pipeline.js",
-    "api": "node scraper/api_server.js"
+    "api": "node scraper/api_server.js",
+    "api:render": "node scripts/render_start.js",
+    "model": "cd scraper && python -m uvicorn model_server:app --host 127.0.0.1 --port 8011"
   },
   "engines": {
     "node": ">=18.0.0"

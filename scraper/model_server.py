@@ -55,11 +55,11 @@ log = logging.getLogger("nutrifence")
 
 DISH_MODEL_PATH = os.getenv(
     "DISH_MODEL_PATH",
-    "models/recommender_nigeria_dishes_extended.joblib"
+    os.path.join(BUNDLE_ROOT, "models", "recommender_nigeria_dishes_extended.joblib")
 )
 FOOD_MODEL_PATH = os.getenv(
     "FOOD_MODEL_PATH",
-    "models/recommender_nigeria.joblib"
+    os.path.join(BUNDLE_ROOT, "models", "recommender_nigeria.joblib")
 )
 
 # ─── Global model state ───────────────────────────────────────────────────────

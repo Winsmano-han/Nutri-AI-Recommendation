@@ -123,8 +123,21 @@ Default:
 
 Open wrapper endpoints:
 - `GET /health`
+- `GET /model/health` (proxied model-server health)
 - `POST /api/recommendations`
 - `POST /api/ingest-report`
+- `POST /recommend` (proxied model-server endpoint)
+- `POST /recommend/batch` (proxied model-server endpoint)
+- `POST /recommend/food` (proxied model-server endpoint)
+- `POST /extract-pdf` (proxied model-server endpoint)
+
+For Render or any single-service deployment, use:
+
+```bash
+npm start
+```
+
+`npm start` runs `scripts/render_start.js`, which starts the Python FastAPI model server internally, waits for `/health`, then starts the Node API wrapper on the public `$PORT`. This is required because Render exposes one public port per service.
 
 `POST /api/recommendations` request example:
 
@@ -230,6 +243,8 @@ Implemented API wrapper endpoints (Node):
 - `POST /api/recommendations`
 - `POST /api/ingest-report`
 - `GET /health` (wrapper health)
+- `GET /model/health` (model health through Node)
+- `POST /recommend`, `/recommend/batch`, `/recommend/food`, `/extract-pdf` (model endpoints proxied through Node)
 
 Minimal request contract for upstream API layer:
 
