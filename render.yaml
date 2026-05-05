@@ -21,10 +21,4 @@ services:
         value: http://127.0.0.1:8011
       - key: API_HOST
         value: 0.0.0.0
-      - key: PYTHONPATH
-        value: ./best_models_bundle
-      - key: DISH_MODEL_PATH
-        value: ./best_models_bundle/models/recommender_nigeria_dishes_extended.joblib
-      - key: FOOD_MODEL_PATH
-        value: ./best_models_bundle/models/recommender_nigeria.joblib
     healthCheckPath: /health
