@@ -34,13 +34,26 @@ const HOST = process.env.API_HOST || "127.0.0.1";
 const PORT = parseInt(process.env.API_PORT || "8090", 10);
 const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8011").replace(/\/$/, "");
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Max-Age": "86400",
+};
+
 function json(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
+    ...CORS_HEADERS,
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+function options(res) {
+  res.writeHead(204, CORS_HEADERS);
+  res.end();
 }
 
 function readJsonBody(req) {
@@ -78,7 +91,10 @@ function proxyToModelServer(req, res, targetPath) {
       headers,
     },
     (proxyRes) => {
-      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+      res.writeHead(proxyRes.statusCode || 502, {
+        ...proxyRes.headers,
+        ...CORS_HEADERS,
+      });
       proxyRes.pipe(res);
     }
   );
@@ -137,6 +153,10 @@ async function runPipeline(payload) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === "OPTIONS") {
+      return options(res);
+    }
+
     if (req.method === "GET" && req.url === "/health") {
       return json(res, 200, { status: "ok", service: "nutrifence-api", port: PORT });
     }
