@@ -1,0 +1,134 @@
+{
+  "_meta": {
+    "description": "Nutrifence Canada nutrition contract grounded in Canada's Food Guide and Health Canada healthy eating guidance. This is the Canada baseline used when USER_COUNTRY/ request country is CA.",
+    "source": "Health Canada — Canada's Food Guide",
+    "country": "CA"
+  },
+  "contracts": {
+    "DEFAULT": {
+      "contractType": "DEFAULT",
+      "source": "Health Canada — Canada's Food Guide",
+      "llmInstructions": [
+        "Prefer meals built around vegetables and fruits, whole grain foods, and protein foods.",
+        "Prefer water over sugary drinks, fountain drinks, sweetened coffee drinks, milkshakes, and energy drinks.",
+        "Prefer grilled, baked, steamed, roasted, or stir-fried foods over deep-fried foods.",
+        "Prefer whole grain bread, wraps, brown rice, oats, barley, and other higher-fibre carbohydrate choices where available.",
+        "Prefer lean proteins such as fish, poultry, beans, lentils, tofu, eggs, and lower-fat dairy options.",
+        "Reduce highly processed foods, especially items high in sodium, sugars, saturated fat, and refined grains.",
+        "Watch portions for calorie-dense restaurant foods such as pizza, burgers, poutine, fries, desserts, creamy sauces, and large combo meals.",
+        "Prefer sauces, dressings, gravy, and condiments on the side to reduce sodium, sugars, and saturated fat.",
+        "Use culturally appropriate Canadian restaurant guidance and mention practical ordering swaps common in Canada."
+      ],
+      "conditionTables": {
+        "diabetes": {
+          "use": {
+            "carbohydrates": ["whole grain bread or wraps", "oats", "brown rice", "beans and lentils", "vegetables"],
+            "proteins": ["grilled fish", "skinless poultry", "eggs", "tofu", "beans", "lentils"],
+            "drinks": ["water", "unsweetened tea", "black coffee"]
+          },
+          "reduceIntake": [
+            "large refined carbohydrate portions",
+            "white bread and large buns",
+            "fries and poutine",
+            "sweetened coffee drinks",
+            "desserts",
+            "sugary drinks"
+          ],
+          "avoid": [
+            "regular pop or fountain drinks",
+            "milkshakes",
+            "large desserts",
+            "large fries or poutine as a meal",
+            "sweetened iced drinks"
+          ],
+          "cookingNotes": [
+            "Choose grilled or baked protein instead of breaded or fried protein.",
+            "Ask for sauces and dressings on the side.",
+            "Pair carbohydrate foods with protein and vegetables."
+          ]
+        },
+        "cardiovascular_hypertension": {
+          "use": {
+            "proteins": ["fish", "skinless poultry", "beans", "lentils", "tofu"],
+            "sides": ["salad", "vegetables", "fruit", "whole grains"],
+            "drinks": ["water", "unsweetened drinks"]
+          },
+          "reduceIntake": [
+            "sodium",
+            "processed meats",
+            "bacon",
+            "sausage",
+            "pepperoni",
+            "gravy",
+            "fried foods",
+            "creamy sauces",
+            "large cheese portions"
+          ],
+          "avoid": [
+            "poutine",
+            "high-sodium soups",
+            "processed meat pizza",
+            "extra salty sauces",
+            "large fried combo meals"
+          ],
+          "cookingNotes": [
+            "Ask for no added salt where possible.",
+            "Choose sauces, gravy, and dressings on the side.",
+            "Choose grilled, baked, or steamed options."
+          ]
+        },
+        "obesity_weight_loss": {
+          "use": {
+            "mealPattern": ["vegetable-forward meals", "lean protein", "high-fibre sides", "water"],
+            "portions": ["small or regular size", "half portion", "share large meals"]
+          },
+          "reduceIntake": [
+            "large combo meals",
+            "fries",
+            "poutine",
+            "desserts",
+            "sweetened drinks",
+            "extra cheese",
+            "creamy sauces"
+          ],
+          "avoid": [
+            "supersized meals",
+            "milkshakes",
+            "dessert plus sugary drink combinations",
+            "fried side plus fried main combinations"
+          ],
+          "cookingNotes": [
+            "Choose one main plus vegetables instead of a combo with fries and sugary drink.",
+            "Ask for dressing or sauce on the side.",
+            "Prefer grilled or baked proteins."
+          ]
+        }
+      }
+    }
+  },
+  "backendNormalization": {
+    "conditionAliases": {
+      "diabetic": "diabetes",
+      "type 2 diabetes": "diabetes",
+      "t2dm": "diabetes",
+      "blood sugar": "diabetes",
+      "hypertension": "hypertension",
+      "high blood pressure": "hypertension",
+      "hbp": "hypertension",
+      "blood pressure": "hypertension",
+      "cardiovascular": "cardiovascular",
+      "heart disease": "cardiovascular",
+      "weight loss": "weight_loss",
+      "weight management": "weight_loss",
+      "obesity": "weight_loss",
+      "overweight": "weight_loss"
+    },
+    "fbdgConditionTableMap": {
+      "diabetes": "diabetes",
+      "hypertension": "cardiovascular_hypertension",
+      "cardiovascular": "cardiovascular_hypertension",
+      "weight_loss": "obesity_weight_loss",
+      "obesity": "obesity_weight_loss"
+    }
+  }
+}

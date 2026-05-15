@@ -131,6 +131,7 @@ async function runPipeline(payload) {
       SEARCH_RADIUS: String(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
       USER_PROFILE: JSON.stringify(payload.userProfile || { conditions: [], restrictions: [] }),
     };
+    if (payload.country != null) env.USER_COUNTRY = String(payload.country);
     if (payload.maxRestaurants != null) env.MAX_RESTAURANTS = String(payload.maxRestaurants);
 
     await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
@@ -185,6 +186,7 @@ const server = http.createServer(async (req, res) => {
         lat,
         lng,
         radius: body.radius,
+        country: body.country,
         userProfile: body.userProfile || { conditions: [], restrictions: [] },
         maxRestaurants: body.maxRestaurants,
       });

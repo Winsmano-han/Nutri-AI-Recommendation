@@ -145,6 +145,7 @@ npm start
 {
   "lat": 7.3622,
   "lng": 3.8503,
+  "country": "NG",
   "radius": 1500,
   "maxRestaurants": 5,
   "userProfile": {
@@ -153,6 +154,28 @@ npm start
   }
 }
 ```
+
+Canada is also supported with the same endpoint:
+
+```json
+{
+  "lat": 43.6532,
+  "lng": -79.3832,
+  "country": "CA",
+  "radius": 1500,
+  "maxRestaurants": 5,
+  "userProfile": {
+    "conditions": ["diabetes"],
+    "restrictions": ["low sugar"]
+  }
+}
+```
+
+Country behavior:
+- `country: "NG"` uses the Nigerian FBDG contract and Nigerian archetypes/model seeds.
+- `country: "CA"` uses the Health Canada / Canada's Food Guide contract and Canadian restaurant archetypes.
+- If `country` is omitted, the pipeline infers `CA` or `NG` from the coordinates where possible.
+- Canadian model inference is currently skipped unless `CANADA_MODEL_ENABLED=1`; this keeps the Nigerian model from producing misleading Canadian recommendations until a Canadian model is trained.
 
 `POST /api/ingest-report` supports:
 - JSON text mode: `{ "userId": "...", "reportText": "..." }`
@@ -252,6 +275,7 @@ Minimal request contract for upstream API layer:
 {
   "lat": 7.3622,
   "lng": 3.8503,
+  "country": "NG",
   "radius": 1500,
   "userProfile": {
     "conditions": ["diabetes"],

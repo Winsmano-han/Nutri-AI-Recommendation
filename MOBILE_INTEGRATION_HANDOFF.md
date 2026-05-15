@@ -76,6 +76,7 @@ Example request:
 {
   "lat": 7.3622,
   "lng": 3.8503,
+  "country": "NG",
   "radius": 1500,
   "maxRestaurants": 5,
   "userProfile": {
@@ -91,10 +92,29 @@ Request fields:
 | --- | --- | --- |
 | `lat` | Yes | User latitude from Geolocator. Must be a number. |
 | `lng` | Yes | User longitude from Geolocator. Must be a number. |
+| `country` | No | `NG` for Nigeria or `CA` for Canada. If omitted, backend infers from coordinates when possible. |
 | `radius` | No | Search radius in metres. Use `1000` to `3000` for production. |
 | `maxRestaurants` | No | Limits restaurants returned. Use low values during demos to reduce latency. |
 | `userProfile.conditions` | No | Normalized condition labels, for example `diabetes`, `hypertension`, `weight_loss`. |
 | `userProfile.restrictions` | No | Practical restrictions, for example `low sodium`, `low sugar`, `no fried food`. |
+
+Canada example:
+
+```json
+{
+  "lat": 43.6532,
+  "lng": -79.3832,
+  "country": "CA",
+  "radius": 1500,
+  "maxRestaurants": 5,
+  "userProfile": {
+    "conditions": ["diabetes"],
+    "restrictions": ["low sugar"]
+  }
+}
+```
+
+`country: "CA"` activates the Health Canada / Canada's Food Guide contract and Canadian restaurant archetypes. Canadian model inference is intentionally skipped until a Canadian model is trained, so Canada recommendations currently use the Canada contract plus AI knowledge.
 
 Example response shape:
 

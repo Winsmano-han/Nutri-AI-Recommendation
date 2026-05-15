@@ -84,13 +84,33 @@ if (process.env.USER_PROFILE) {
   }
 }
 
+function normalizeCountry(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (["ca", "can", "canada"].includes(raw)) return "CA";
+  if (["ng", "nga", "nigeria"].includes(raw)) return "NG";
+  return null;
+}
+
+function inferCountryFromCoordinates(lat, lng) {
+  if (lat >= 41 && lat <= 84 && lng >= -142 && lng <= -52) return "CA";
+  if (lat >= 4 && lat <= 14.5 && lng >= 2 && lng <= 15) return "NG";
+  return "NG";
+}
+
+const USER_COUNTRY =
+  normalizeCountry(process.env.USER_COUNTRY || process.env.COUNTRY || USER_PROFILE.country) ||
+  inferCountryFromCoordinates(USER_LAT, USER_LNG);
+
 const INSPECT_PLACES_ONLY = process.env.INSPECT_PLACES_ONLY === "1";
 
 const OUTPUT_PATH = path.join(
   __dirname,
   `recommendations_${new Date().toISOString().replace(/[:.]/g, "-")}.json`
 );
-const CONTRACT_PATH = path.join(__dirname, "nutrition_contract.json");
+const CONTRACT_PATHS = {
+  NG: path.join(__dirname, "nutrition_contract.json"),
+  CA: path.join(__dirname, "nutrition_contract_canada.json"),
+};
 const ACTIVE_USER_CONTRACT_PATH = path.join(__dirname, "user_contract_active.json");
 
 // ─── Archetype taxonomy ───────────────────────────────────────────────────────
@@ -112,6 +132,19 @@ const ARCHETYPES = {
   shawarma_pizza:       "Shawarma, pizza, or Middle Eastern fast food spot",
   fine_dining_nigerian: "Upscale Nigerian or Afro-fusion fine dining restaurant",
   unknown:              "Restaurant type could not be determined — Nigerian food likely",
+  canadian_fast_food:   "Canadian fast food chain or quick-service restaurant",
+  coffee_bakery:        "Coffee shop, cafe, bakery, or breakfast pastry spot",
+  casual_dining:        "Canadian casual dining restaurant or pub-style restaurant",
+  pizza_canada:         "Pizza restaurant common in Canada",
+  burger_grill_canada:  "Burger, grill, or sandwich restaurant common in Canada",
+  asian_canadian:       "Asian restaurant in Canada (Chinese, Japanese, Thai, Korean, Vietnamese)",
+  middle_eastern_canada:"Middle Eastern, shawarma, kebab, or Mediterranean restaurant in Canada",
+  indian_canada:        "Indian or South Asian restaurant in Canada",
+  caribbean_canada:     "Caribbean restaurant in Canada",
+  healthy_bowl_salad:   "Health-focused salad, bowl, smoothie, or fresh food restaurant",
+  seafood_canada:       "Seafood restaurant in Canada",
+  breakfast_brunch:     "Breakfast or brunch restaurant in Canada",
+  unknown_canada:       "Restaurant type could not be determined — Canadian restaurant guidance likely",
 };
 
 /**
@@ -136,6 +169,26 @@ const ARCHETYPE_SEEDS = {
     "pepper soup",
     "ofada rice",
   ],
+  canadian_fast_food:   ["grilled chicken sandwich", "side salad", "apple slices", "burger", "fries", "sugary drink"],
+  coffee_bakery:        ["oatmeal", "egg breakfast sandwich", "whole grain toast", "black coffee", "muffin", "donut", "sweetened latte"],
+  casual_dining:        ["grilled salmon", "chicken salad", "vegetable soup", "steak with vegetables", "poutine", "fried wings"],
+  pizza_canada:         ["thin crust vegetable pizza", "grilled chicken pizza", "garden salad", "pepperoni pizza", "cheesy bread"],
+  burger_grill_canada:  ["grilled chicken sandwich", "lettuce wrap burger", "side salad", "beef burger", "fries", "milkshake"],
+  asian_canadian:       ["steamed rice vegetables", "stir fried vegetables", "grilled teriyaki chicken", "fried rice", "sweet sour chicken"],
+  middle_eastern_canada:["chicken shawarma plate", "falafel salad", "lentil soup", "tabbouleh", "shawarma wrap", "garlic potatoes"],
+  indian_canada:        ["tandoori chicken", "dal", "chana masala", "vegetable curry", "naan", "butter chicken"],
+  caribbean_canada:     ["jerk chicken", "rice and peas", "vegetable stew", "curry goat", "fried plantain", "patty"],
+  healthy_bowl_salad:   ["grain bowl", "salad with grilled chicken", "lentil bowl", "vegetable soup", "smoothie", "sweetened juice"],
+  seafood_canada:       ["grilled salmon", "baked cod", "shrimp salad", "fish and chips", "clam chowder"],
+  breakfast_brunch:     ["oatmeal", "egg omelette vegetables", "whole grain toast", "fruit bowl", "pancakes syrup", "bacon"],
+  unknown_canada:       [
+    "grilled chicken",
+    "vegetable salad",
+    "whole grain sandwich",
+    "vegetable soup",
+    "fries",
+    "sugary drink",
+  ],
 };
 
 // In-memory cache: placeId → archetype (avoids reclassifying same venue twice)
@@ -144,7 +197,11 @@ const archetypeCache = new Map();
 // ─── Nutrition contract helpers ───────────────────────────────────────────────
 
 function loadActiveContract(userProfile) {
-  const contractFile = JSON.parse(fs.readFileSync(CONTRACT_PATH, "utf8"));
+  const contractPath = CONTRACT_PATHS[USER_COUNTRY] || CONTRACT_PATHS.NG;
+  if (!fs.existsSync(contractPath)) {
+    throw new Error(`Nutrition contract not found for country ${USER_COUNTRY}: ${contractPath}`);
+  }
+  const contractFile = JSON.parse(fs.readFileSync(contractPath, "utf8"));
   const contracts = contractFile.contracts || {};
   const defaultContract = contracts.DEFAULT || null;
   const normMap = contractFile.backendNormalization?.conditionAliases || {};
@@ -169,12 +226,17 @@ function loadActiveContract(userProfile) {
     userContract,
     activeTables,
     normalizedConditions,
+    country: USER_COUNTRY,
   };
 }
 
 function buildNutritionPromptBlock(contractData, userProfile) {
-  const { defaultContract, userContract, activeTables } = contractData;
+  const { defaultContract, userContract, activeTables, country } = contractData;
   const restrictions = (userProfile?.restrictions || []).filter(Boolean);
+  const baselineLabel =
+    country === "CA"
+      ? "BASELINE RULES (Health Canada — Canada's Food Guide):"
+      : "BASELINE RULES (Federal Ministry of Health Nigeria, WHO 2006):";
   const lines = [];
 
   lines.push("=== ACTIVE NUTRITION CONTRACT ===");
@@ -182,7 +244,7 @@ function buildNutritionPromptBlock(contractData, userProfile) {
   if (defaultContract) {
     lines.push(`Authority: ${defaultContract.source}`);
     lines.push("");
-    lines.push("BASELINE RULES (Federal Ministry of Health Nigeria, WHO 2006):");
+    lines.push(baselineLabel);
     for (const inst of defaultContract.llmInstructions || []) lines.push(`- ${inst}`);
 
     for (const tableKey of activeTables) {
@@ -299,9 +361,37 @@ function resolveVenueCoordinates(details, basicPlace) {
  * Fast pattern-based classifier — handles known chains and obvious name patterns
  * without spending an API call. Returns an archetype key or null if ambiguous.
  */
-function classifyByPattern(name, types) {
+function classifyByPattern(name, types, country = USER_COUNTRY) {
   const n = name.toLowerCase();
   const t = (types || []).join(" ").toLowerCase();
+
+  if (country === "CA") {
+    if (n.match(/tim hortons?|starbucks|second cup|coffee|cafe|bakery|bagel|donut|doughnut/))
+      return "coffee_bakery";
+    if (n.match(/mcdonald|wendy|a&w|harvey|subway|popeyes|kfc|burger king|dairy queen|taco bell/))
+      return "canadian_fast_food";
+    if (n.match(/pizza|domino|pizza pizza|pizzaiolo|little caesars|241 pizza|panago/))
+      return "pizza_canada";
+    if (n.match(/burger|grill|smash|sandwich|deli/))
+      return "burger_grill_canada";
+    if (n.match(/sushi|thai|chinese|korean|vietnam|pho|ramen|wok|asian|teriyaki/))
+      return "asian_canadian";
+    if (n.match(/shawarma|kebab|falafel|lebanese|middle.?east|mediterranean|gyro/))
+      return "middle_eastern_canada";
+    if (n.match(/indian|punjabi|tandoor|curry|biryani|dosa|pakistani|south asian/))
+      return "indian_canada";
+    if (n.match(/caribbean|jamaican|jerk|roti|trini|west indian/))
+      return "caribbean_canada";
+    if (n.match(/salad|freshii|fresh|bowl|smoothie|juice|healthy/))
+      return "healthy_bowl_salad";
+    if (n.match(/seafood|fish|lobster|oyster|clam|crab/))
+      return "seafood_canada";
+    if (n.match(/breakfast|brunch|pancake|waffle|egg/))
+      return "breakfast_brunch";
+    if (t.includes("cafe") || t.includes("bakery")) return "coffee_bakery";
+    if (t.includes("fast_food") || t.includes("meal_takeaway")) return "canadian_fast_food";
+    return null;
+  }
 
   // Known Nigerian fast food chains
   if (n.match(/chicken republic|mr bigg|tastee|tantalizer|sweet sensation|debonairs/))
@@ -354,15 +444,45 @@ function classifyByPattern(name, types) {
  * Groq-assisted classifier for ambiguous names.
  * Returns one of the 10 archetype keys as a string.
  */
-async function classifyWithGroq(name, address, types, editorial) {
-  const archetypeList = Object.entries(ARCHETYPES)
-    .map(([key, desc]) => `  "${key}": ${desc}`)
+async function classifyWithGroq(name, address, types, editorial, country = USER_COUNTRY) {
+  const countryLabel = country === "CA" ? "Canadian" : "Nigerian";
+  const fallbackKey = country === "CA" ? "unknown_canada" : "unknown";
+  const allowedKeys = country === "CA"
+    ? [
+        "canadian_fast_food",
+        "coffee_bakery",
+        "casual_dining",
+        "pizza_canada",
+        "burger_grill_canada",
+        "asian_canadian",
+        "middle_eastern_canada",
+        "indian_canada",
+        "caribbean_canada",
+        "healthy_bowl_salad",
+        "seafood_canada",
+        "breakfast_brunch",
+        "unknown_canada",
+      ]
+    : [
+        "fast_food_nigerian",
+        "fast_food_western",
+        "local_canteen",
+        "suya_grill",
+        "seafood_joint",
+        "pepper_soup_joint",
+        "chinese_continental",
+        "shawarma_pizza",
+        "fine_dining_nigerian",
+        "unknown",
+      ];
+  const archetypeList = allowedKeys
+    .map((key) => `  "${key}": ${ARCHETYPES[key]}`)
     .join("\n");
 
-  const prompt = `You are classifying a Nigerian restaurant into exactly one category.
+  const prompt = `You are classifying a ${countryLabel} restaurant into exactly one category.
 
 Restaurant name: ${name}
-Address: ${address || "Nigeria"}
+Address: ${address || countryLabel}
 Google types: ${(types || []).join(", ")}
 ${editorial ? `Description: ${editorial}` : ""}
 
@@ -388,7 +508,7 @@ Respond with ONLY the archetype key string. Nothing else. No explanation.`;
   const data = await response.json();
   const raw  = (data.choices?.[0]?.message?.content || "unknown").trim().replace(/"/g, "");
 
-  return ARCHETYPES[raw] ? raw : "unknown";
+  return allowedKeys.includes(raw) ? raw : fallbackKey;
 }
 
 /**
@@ -401,7 +521,8 @@ async function resolveArchetype(place) {
 
   const patternResult = classifyByPattern(
     place.name,
-    place.types
+    place.types,
+    USER_COUNTRY
   );
 
   const archetype = patternResult
@@ -410,7 +531,8 @@ async function resolveArchetype(place) {
         place.name,
         place.formatted_address,
         place.types,
-        place.editorial_summary?.overview
+        place.editorial_summary?.overview,
+        USER_COUNTRY
       );
 
   archetypeCache.set(place.place_id, archetype);
@@ -425,6 +547,9 @@ async function resolveArchetype(place) {
  */
 async function getModelRecommendations(archetype, userConditions) {
   const seeds = ARCHETYPE_SEEDS[archetype] || ARCHETYPE_SEEDS.unknown;
+  if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") {
+    return [];
+  }
 
   // Map first condition to model-compatible string (model supports one at a time)
   const primaryCondition = userConditions.find(c =>
@@ -481,6 +606,11 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
   const nutritionBlock = buildNutritionPromptBlock(contractData, userProfile);
   const archetypeDesc = ARCHETYPES[archetype];
   const conditions = contractData.normalizedConditions.join(", ") || "none";
+  const countryLabel = USER_COUNTRY === "CA" ? "Canadian" : "Nigerian";
+  const foodGuideName = USER_COUNTRY === "CA" ? "Canada's Food Guide" : "Nigerian Food-Based Dietary Guidelines";
+  const contextTip = USER_COUNTRY === "CA"
+    ? "Canadian context (e.g. sauces/dressings/gravy on the side, water instead of pop, grilled/baked instead of fried, salad/vegetables instead of fries or poutine)"
+    : "Nigerian context (e.g. ask for soup without stock cubes, choose grilled/boiled instead of fried)";
 
   const modelDishNames = new Set(modelRecs.map((r) => String(r.dish_name || "").toLowerCase()).filter(Boolean));
   const attachSafeOrderSources = (obj) => {
@@ -498,10 +628,11 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
     .map((r, i) => `${i + 1}. ${r.dish_name} (similarity: ${(r.similarity_score || 0).toFixed(2)}, health_label: ${r.health_label || "unknown"})`)
     .join("\n");
 
-  const prompt = `You are a Nigerian clinical nutrition advisor. A user is at a restaurant and needs safe meal guidance.
+  const prompt = `You are a ${countryLabel} clinical nutrition advisor. A user is at a restaurant and needs safe meal guidance.
 
 Restaurant: "${restaurantName}"
 Type: ${archetypeDesc}
+Country context: ${USER_COUNTRY}
 
 Active normalized conditions: ${conditions}
 
@@ -510,7 +641,7 @@ ${nutritionBlock}
 The following dishes were ranked by our AI recommendation model as most relevant for this restaurant type:
 ${recList || "(no model recommendations available — use your knowledge of this restaurant type)"}
 
-Using both the model recommendations and your knowledge of Nigerian food:
+Using both the model recommendations and your knowledge of ${countryLabel} restaurant food:
 
 Return a JSON object with exactly this shape:
 {
@@ -520,7 +651,7 @@ Return a JSON object with exactly this shape:
   "avoid": [
     { "item": "dish or category", "reason": "one sentence why to avoid" }
   ],
-  "tip": "one practical ordering tip for this specific restaurant type in Nigeria",
+  "tip": "one practical ordering tip for this specific restaurant type in this country",
   "confidenceNote": "short note if recommendation confidence is low, else null"
 }
 
@@ -529,10 +660,10 @@ Rules:
 - source: "model" ONLY if the exact dish appears in the ranked model list above.
           Use "ai_knowledge" if you added the dish from your own knowledge.
 - avoid: 2 to 3 items. Must reference specific active conditions when present.
-- tip: must be specific to Nigerian context (e.g. "ask for soup without stock cubes" not generic advice).
+- tip: must be specific to ${contextTip}, not generic advice.
 - tip must never claim palm oil, extra fried foods, or excessive red meat are healthier choices.
 - even with no stated conditions, keep cardiovascular-safe guidance.
-- If conditions is "none", give general healthy Nigerian meal guidance.
+- If conditions is "none", give general healthy guidance aligned with ${foodGuideName}.
 - Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
 
   const response = await groqWithRetry(GROQ_API_URL, {
@@ -696,6 +827,7 @@ async function main() {
   console.log("🍽️  Nutrifence — Restaurant Recommendation Pipeline");
   console.log(`   Groq model : ${GROQ_MODEL}`);
   console.log(`   Model API  : ${MODEL_API_URL}`);
+  console.log(`   Country    : ${USER_COUNTRY}`);
   console.log(`   Location   : ${USER_LAT}, ${USER_LNG}  radius ${SEARCH_RADIUS}m`);
   console.log(`   Profile    : conditions=[${USER_PROFILE.conditions}]  restrictions=[${USER_PROFILE.restrictions}]`);
   console.log("══════════════════════════════════════════════════════\n");
@@ -772,7 +904,7 @@ async function main() {
       // Classify archetype
       process.stdout.write(`  🏷️  Classifying archetype… `);
       const archetype = await resolveArchetype(details);
-      const source    = classifyByPattern(details.name, details.types) ? "pattern" : "groq";
+      const source    = classifyByPattern(details.name, details.types, USER_COUNTRY) ? "pattern" : "groq";
       console.log(`${archetype} (via ${source})`);
 
       // Get model recommendations (skip if server is down — flag as low confidence)
@@ -780,7 +912,11 @@ async function main() {
       if (modelServerUp) {
         process.stdout.write(`  🤖 Model inference (${ARCHETYPE_SEEDS[archetype].length} seeds)… `);
         modelRecs = await getModelRecommendations(archetype, USER_PROFILE.conditions || []);
-        console.log(`${modelRecs.length} ranked dishes`);
+        if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") {
+          console.log("skipped until Canadian model is added");
+        } else {
+          console.log(`${modelRecs.length} ranked dishes`);
+        }
       } else {
         console.log(`  ⚠️  Model server offline — skipping inference, using Groq knowledge only`);
       }
@@ -793,8 +929,8 @@ async function main() {
 
       venues.push(buildVenueObject(details, archetype, coords, coords.coordSource));
       const inferredConfidenceNote =
-        archetype === "unknown"
-          ? "Low confidence: venue archetype is unknown, so recommendations use generic Nigerian seed dishes."
+        archetype === "unknown" || archetype === "unknown_canada"
+          ? `Low confidence: venue archetype is unknown, so recommendations use generic ${USER_COUNTRY === "CA" ? "Canadian" : "Nigerian"} restaurant guidance.`
           : null;
       recommendations[details.place_id] = {
         modelRecommendations: visibleModelRecs.map(r => ({
@@ -834,6 +970,7 @@ async function main() {
       generatedAt:     new Date().toISOString(),
       pipelineVersion: "2.0.0",
       source:          "Google Maps Places API + Nutrifence joblib models + Groq AI",
+      country:         USER_COUNTRY,
       userLocation:    { lat: USER_LAT, lng: USER_LNG, radiusMetres: SEARCH_RADIUS },
       userProfile:     USER_PROFILE,
       venueCount:      venues.length,
