@@ -34,6 +34,8 @@
 import fs   from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { loadCountryPack, normalizeCountry, inferCountryFromCoordinates } from "./country_packs/index.js";
+import { loadUserContract, contractStoreInfo } from "./contract_store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -84,22 +86,11 @@ if (process.env.USER_PROFILE) {
   }
 }
 
-function normalizeCountry(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (["ca", "can", "canada"].includes(raw)) return "CA";
-  if (["ng", "nga", "nigeria"].includes(raw)) return "NG";
-  return null;
-}
-
-function inferCountryFromCoordinates(lat, lng) {
-  if (lat >= 41 && lat <= 84 && lng >= -142 && lng <= -52) return "CA";
-  if (lat >= 4 && lat <= 14.5 && lng >= 2 && lng <= 15) return "NG";
-  return "NG";
-}
-
 const USER_COUNTRY =
   normalizeCountry(process.env.USER_COUNTRY || process.env.COUNTRY || USER_PROFILE.country) ||
   inferCountryFromCoordinates(USER_LAT, USER_LNG);
+const USER_ID = String(process.env.USER_ID || USER_PROFILE.userId || "").trim();
+const COUNTRY_PACK = loadCountryPack(USER_COUNTRY);
 
 const INSPECT_PLACES_ONLY = process.env.INSPECT_PLACES_ONLY === "1";
 
@@ -111,93 +102,18 @@ const CONTRACT_PATHS = {
   NG: path.join(__dirname, "nutrition_contract.json"),
   CA: path.join(__dirname, "nutrition_contract_canada.json"),
 };
-const ACTIVE_USER_CONTRACT_PATH = path.join(__dirname, "user_contract_active.json");
 
-// ─── Archetype taxonomy ───────────────────────────────────────────────────────
+// ─── Country pack taxonomy ───────────────────────────────────────────────────
 
-/**
- * 10 archetypes that cover the Nigerian restaurant landscape.
- * Each maps to seed dishes the recommender models understand.
- * The archetype is derived first from name/types pattern matching (fast, cached),
- * and only falls back to a Groq classify call for ambiguous names.
- */
-const ARCHETYPES = {
-  fast_food_nigerian:   "Nigerian fast food chain (Chicken Republic, Mr Bigg's, Tastee Fried Chicken)",
-  fast_food_western:    "Western fast food chain (KFC, Domino's, Subway, Burger King)",
-  local_canteen:        "Local Nigerian canteen or buka (mama put, local chop house)",
-  suya_grill:           "Suya spot or roadside Nigerian grill (suya, asun, kilishi)",
-  seafood_joint:        "Seafood restaurant (fresh fish, prawns, crab, lobster)",
-  pepper_soup_joint:    "Pepper soup bar or Nigerian pub-style spot",
-  chinese_continental:  "Chinese or continental/intercontinental restaurant",
-  shawarma_pizza:       "Shawarma, pizza, or Middle Eastern fast food spot",
-  fine_dining_nigerian: "Upscale Nigerian or Afro-fusion fine dining restaurant",
-  unknown:              "Restaurant type could not be determined — Nigerian food likely",
-  canadian_fast_food:   "Canadian fast food chain or quick-service restaurant",
-  coffee_bakery:        "Coffee shop, cafe, bakery, or breakfast pastry spot",
-  casual_dining:        "Canadian casual dining restaurant or pub-style restaurant",
-  pizza_canada:         "Pizza restaurant common in Canada",
-  burger_grill_canada:  "Burger, grill, or sandwich restaurant common in Canada",
-  asian_canadian:       "Asian restaurant in Canada (Chinese, Japanese, Thai, Korean, Vietnamese)",
-  middle_eastern_canada:"Middle Eastern, shawarma, kebab, or Mediterranean restaurant in Canada",
-  indian_canada:        "Indian or South Asian restaurant in Canada",
-  caribbean_canada:     "Caribbean restaurant in Canada",
-  healthy_bowl_salad:   "Health-focused salad, bowl, smoothie, or fresh food restaurant",
-  seafood_canada:       "Seafood restaurant in Canada",
-  breakfast_brunch:     "Breakfast or brunch restaurant in Canada",
-  unknown_canada:       "Restaurant type could not be determined — Canadian restaurant guidance likely",
-};
-
-/**
- * Seed dishes per archetype — these are passed as `like_text` to the dish model.
- * Chosen to represent the typical spread at each venue type.
- */
-const ARCHETYPE_SEEDS = {
-  fast_food_nigerian:   ["jollof rice chicken", "fried rice coleslaw", "puff puff chips", "grilled chicken wings"],
-  fast_food_western:    ["fried chicken burger", "french fries", "grilled chicken wrap", "coleslaw"],
-  local_canteen:        ["egusi soup pounded yam", "jollof rice fried plantain", "ofe onugbu garri", "amala ewedu gbegiri"],
-  suya_grill:           ["beef suya", "chicken suya", "asun peppered goat meat", "grilled fish pepper sauce"],
-  seafood_joint:        ["peppered fish", "grilled tilapia", "prawn stir fry", "seafood okra soup"],
-  pepper_soup_joint:    ["goat meat pepper soup", "catfish pepper soup", "cow leg pepper soup", "assorted meat pepper soup"],
-  chinese_continental:  ["fried rice egg", "noodles chicken", "sweet sour chicken", "vegetable stir fry"],
-  shawarma_pizza:       ["chicken shawarma", "beef shawarma", "pepperoni pizza", "chicken pizza"],
-  fine_dining_nigerian: ["ofada rice ayamase sauce", "banga soup starch", "oha soup", "nkwobi cow leg"],
-  unknown:              [
-    "jollof rice",
-    "egusi soup pounded yam",
-    "grilled chicken",
-    "fried plantain",
-    "pepper soup",
-    "ofada rice",
-  ],
-  canadian_fast_food:   ["grilled chicken sandwich", "side salad", "apple slices", "burger", "fries", "sugary drink"],
-  coffee_bakery:        ["oatmeal", "egg breakfast sandwich", "whole grain toast", "black coffee", "muffin", "donut", "sweetened latte"],
-  casual_dining:        ["grilled salmon", "chicken salad", "vegetable soup", "steak with vegetables", "poutine", "fried wings"],
-  pizza_canada:         ["thin crust vegetable pizza", "grilled chicken pizza", "garden salad", "pepperoni pizza", "cheesy bread"],
-  burger_grill_canada:  ["grilled chicken sandwich", "lettuce wrap burger", "side salad", "beef burger", "fries", "milkshake"],
-  asian_canadian:       ["steamed rice vegetables", "stir fried vegetables", "grilled teriyaki chicken", "fried rice", "sweet sour chicken"],
-  middle_eastern_canada:["chicken shawarma plate", "falafel salad", "lentil soup", "tabbouleh", "shawarma wrap", "garlic potatoes"],
-  indian_canada:        ["tandoori chicken", "dal", "chana masala", "vegetable curry", "naan", "butter chicken"],
-  caribbean_canada:     ["jerk chicken", "rice and peas", "vegetable stew", "curry goat", "fried plantain", "patty"],
-  healthy_bowl_salad:   ["grain bowl", "salad with grilled chicken", "lentil bowl", "vegetable soup", "smoothie", "sweetened juice"],
-  seafood_canada:       ["grilled salmon", "baked cod", "shrimp salad", "fish and chips", "clam chowder"],
-  breakfast_brunch:     ["oatmeal", "egg omelette vegetables", "whole grain toast", "fruit bowl", "pancakes syrup", "bacon"],
-  unknown_canada:       [
-    "grilled chicken",
-    "vegetable salad",
-    "whole grain sandwich",
-    "vegetable soup",
-    "fries",
-    "sugary drink",
-  ],
-};
-
+const ARCHETYPES = COUNTRY_PACK.archetypes;
+const ARCHETYPE_SEEDS = COUNTRY_PACK.archetypeSeeds;
 // In-memory cache: placeId → archetype (avoids reclassifying same venue twice)
 const archetypeCache = new Map();
 
 // ─── Nutrition contract helpers ───────────────────────────────────────────────
 
-function loadActiveContract(userProfile) {
-  const contractPath = CONTRACT_PATHS[USER_COUNTRY] || CONTRACT_PATHS.NG;
+async function loadActiveContract(userProfile) {
+  const contractPath = CONTRACT_PATHS[COUNTRY_PACK.countryCode] || CONTRACT_PATHS.NG;
   if (!fs.existsSync(contractPath)) {
     throw new Error(`Nutrition contract not found for country ${USER_COUNTRY}: ${contractPath}`);
   }
@@ -216,17 +132,16 @@ function loadActiveContract(userProfile) {
     normalizedConditions.map((c) => tableMap[c]).filter(Boolean)
   )];
 
-  let userContract = null;
-  if (fs.existsSync(ACTIVE_USER_CONTRACT_PATH)) {
-    userContract = JSON.parse(fs.readFileSync(ACTIVE_USER_CONTRACT_PATH, "utf8"));
-  }
+  const userContract = USER_ID ? await loadUserContract(USER_ID) : null;
 
   return {
     defaultContract,
     userContract,
     activeTables,
     normalizedConditions,
-    country: USER_COUNTRY,
+    country: COUNTRY_PACK.countryCode,
+    contractSource: defaultContract?.source || null,
+    userContractUsed: Boolean(userContract),
   };
 }
 
@@ -322,6 +237,8 @@ async function getPlaceDetails(placeId) {
     "user_ratings_total",
     "types",
     "opening_hours",
+    "website",
+    "url",
   ].join(",");
 
   const url =
@@ -362,82 +279,7 @@ function resolveVenueCoordinates(details, basicPlace) {
  * without spending an API call. Returns an archetype key or null if ambiguous.
  */
 function classifyByPattern(name, types, country = USER_COUNTRY) {
-  const n = name.toLowerCase();
-  const t = (types || []).join(" ").toLowerCase();
-
-  if (country === "CA") {
-    if (n.match(/tim hortons?|starbucks|second cup|coffee|cafe|bakery|bagel|donut|doughnut/))
-      return "coffee_bakery";
-    if (n.match(/mcdonald|wendy|a&w|harvey|subway|popeyes|kfc|burger king|dairy queen|taco bell/))
-      return "canadian_fast_food";
-    if (n.match(/pizza|domino|pizza pizza|pizzaiolo|little caesars|241 pizza|panago/))
-      return "pizza_canada";
-    if (n.match(/burger|grill|smash|sandwich|deli/))
-      return "burger_grill_canada";
-    if (n.match(/sushi|thai|chinese|korean|vietnam|pho|ramen|wok|asian|teriyaki/))
-      return "asian_canadian";
-    if (n.match(/shawarma|kebab|falafel|lebanese|middle.?east|mediterranean|gyro/))
-      return "middle_eastern_canada";
-    if (n.match(/indian|punjabi|tandoor|curry|biryani|dosa|pakistani|south asian/))
-      return "indian_canada";
-    if (n.match(/caribbean|jamaican|jerk|roti|trini|west indian/))
-      return "caribbean_canada";
-    if (n.match(/salad|freshii|fresh|bowl|smoothie|juice|healthy/))
-      return "healthy_bowl_salad";
-    if (n.match(/seafood|fish|lobster|oyster|clam|crab/))
-      return "seafood_canada";
-    if (n.match(/breakfast|brunch|pancake|waffle|egg/))
-      return "breakfast_brunch";
-    if (t.includes("cafe") || t.includes("bakery")) return "coffee_bakery";
-    if (t.includes("fast_food") || t.includes("meal_takeaway")) return "canadian_fast_food";
-    return null;
-  }
-
-  // Known Nigerian fast food chains
-  if (n.match(/chicken republic|mr bigg|tastee|tantalizer|sweet sensation|debonairs/))
-    return "fast_food_nigerian";
-
-  // Known western chains
-  if (n.match(/\bkfc\b|domino|subway|burger king|cold stone|pizza hut|hardee/))
-    return "fast_food_western";
-
-  // Suya / grill signals
-  if (n.match(/suya|asun|kilishi|bbq|barbeque|grill(?!e)/))
-    return "suya_grill";
-
-  // Seafood
-  if (n.match(/seafood|lobster|crab|prawn|fish ?house|fish ?spot/))
-    return "seafood_joint";
-
-  // Pepper soup
-  if (n.match(/pepper.?soup|nkwobi|point.?and.?kill/))
-    return "pepper_soup_joint";
-
-  // Chinese / continental
-  if (n.match(/chinese|asian|wok|dragon|jade|dynasty|continental|intercontinental/))
-    return "chinese_continental";
-
-  // Shawarma / pizza
-  if (n.match(/shawarma|pizza|wraps?|middle.?east|lebanese|turkish/))
-    return "shawarma_pizza";
-
-  // Fine dining signals
-  if (n.match(/restaurant(?! canteen| buka)/) && t.includes("restaurant") && !t.includes("fast_food"))
-    return null; // Could be fine dining or local — let Groq decide
-
-  // Google types fast food
-  if (t.includes("fast_food") || t.includes("meal_takeaway"))
-    return "fast_food_nigerian";
-
-  // Canteen / buka signals
-  if (n.match(/mama|buka|bukas|canteen|eatery|chophouse|chop.?house|joint|spot/))
-    return "local_canteen";
-
-  // Cultural/local naming cues that often map to Nigerian restaurant brands.
-  if (n.match(/ad[uù]n|ile|eko|naija|9ja|afro|lagos|abuja|ibile/))
-    return "fine_dining_nigerian";
-
-  return null; // Ambiguous — fall through to Groq
+  return COUNTRY_PACK.classifyByPattern(name, types, country);
 }
 
 /**
@@ -445,36 +287,9 @@ function classifyByPattern(name, types, country = USER_COUNTRY) {
  * Returns one of the 10 archetype keys as a string.
  */
 async function classifyWithGroq(name, address, types, editorial, country = USER_COUNTRY) {
-  const countryLabel = country === "CA" ? "Canadian" : "Nigerian";
-  const fallbackKey = country === "CA" ? "unknown_canada" : "unknown";
-  const allowedKeys = country === "CA"
-    ? [
-        "canadian_fast_food",
-        "coffee_bakery",
-        "casual_dining",
-        "pizza_canada",
-        "burger_grill_canada",
-        "asian_canadian",
-        "middle_eastern_canada",
-        "indian_canada",
-        "caribbean_canada",
-        "healthy_bowl_salad",
-        "seafood_canada",
-        "breakfast_brunch",
-        "unknown_canada",
-      ]
-    : [
-        "fast_food_nigerian",
-        "fast_food_western",
-        "local_canteen",
-        "suya_grill",
-        "seafood_joint",
-        "pepper_soup_joint",
-        "chinese_continental",
-        "shawarma_pizza",
-        "fine_dining_nigerian",
-        "unknown",
-      ];
+  const countryLabel = COUNTRY_PACK.countryLabel;
+  const fallbackKey = COUNTRY_PACK.unknownArchetype;
+  const allowedKeys = Object.keys(ARCHETYPES);
   const archetypeList = allowedKeys
     .map((key) => `  "${key}": ${ARCHETYPES[key]}`)
     .join("\n");
@@ -550,6 +365,10 @@ async function getModelRecommendations(archetype, userConditions) {
   if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") {
     return [];
   }
+  const modelApiUrl =
+    USER_COUNTRY === "CA"
+      ? (process.env.CANADA_MODEL_API_URL || MODEL_API_URL).replace(/\/$/, "")
+      : MODEL_API_URL;
 
   // Map first condition to model-compatible string (model supports one at a time)
   const primaryCondition = userConditions.find(c =>
@@ -559,7 +378,7 @@ async function getModelRecommendations(archetype, userConditions) {
   const body = { seeds, top_k: 6 };
   if (primaryCondition) body.condition = primaryCondition;
 
-  const response = await fetch(`${MODEL_API_URL}/recommend/batch`, {
+  const response = await fetch(`${modelApiUrl}/recommend/batch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -601,8 +420,8 @@ async function getModelRecommendations(archetype, userConditions) {
  *
  * Returns a structured object the Flutter app can render directly.
  */
-async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile) {
-  const contractData = loadActiveContract(userProfile);
+async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile, contractData = null) {
+  contractData = contractData || await loadActiveContract(userProfile);
   const nutritionBlock = buildNutritionPromptBlock(contractData, userProfile);
   const archetypeDesc = ARCHETYPES[archetype];
   const conditions = contractData.normalizedConditions.join(", ") || "none";
@@ -802,6 +621,50 @@ function buildVenueObject(place, archetype, coords, coordSource) {
     ratingCount:   place.user_ratings_total ?? null,
     priceLevel:    place.price_level   ?? null,
     openNow:       place.opening_hours?.open_now ?? null,
+    website:       place.website       ?? null,
+    googleMapsUrl: place.url           ?? null,
+    menuEnrichment: {
+      attempted: false,
+      source: place.website ? "website_available" : null,
+      note: place.website
+        ? "Official website is available for future menu extraction, but menu enrichment is not enabled yet."
+        : "No official website returned by Places Details.",
+    },
+  };
+}
+
+function buildConfidence({ archetype, modelUsed, userContractUsed, menuAvailable }) {
+  const unknown = archetype === COUNTRY_PACK.unknownArchetype || archetype === "unknown" || archetype === "unknown_canada";
+  const venueArchetype = unknown ? 0.35 : 0.8;
+  const menuAvailability = menuAvailable ? 0.45 : 0.15;
+  const modelScore = modelUsed ? 0.85 : 0.45;
+  const contractScore = userContractUsed ? 0.95 : 0.75;
+  const overall = Number(((venueArchetype * 0.3) + (menuAvailability * 0.2) + (modelScore * 0.25) + (contractScore * 0.25)).toFixed(2));
+
+  return {
+    overall,
+    venueArchetype,
+    menuAvailability,
+    modelUsed,
+    contractUsed: true,
+    userContractUsed,
+    menuEnrichmentUsed: false,
+  };
+}
+
+function makeUnknownAdviceSafer(advice, archetype) {
+  const unknown = archetype === COUNTRY_PACK.unknownArchetype || archetype === "unknown" || archetype === "unknown_canada";
+  if (!unknown) return advice;
+
+  return {
+    ...advice,
+    safeOrders: (advice.safeOrders || []).map((item) => ({
+      ...item,
+      dish: /^ask if available:/i.test(item.dish || "") ? item.dish : `Ask if available: ${item.dish}`,
+    })),
+    confidenceNote:
+      advice.confidenceNote ||
+      "No menu was available and venue type is uncertain. These are general healthy options to ask for, not confirmed menu items.",
   };
 }
 
@@ -835,6 +698,7 @@ async function main() {
   // ── Step 0: Health-check model server ──
   console.log("🔌 Step 0: Checking model server…");
   const modelServerUp = await checkModelServer();
+  const activeContractData = await loadActiveContract(USER_PROFILE);
   console.log();
 
   // ── Step 1: Find nearby restaurants ──
@@ -924,7 +788,8 @@ async function main() {
       // Groq explain + filter
       process.stdout.write(`  💬 Generating advice (Groq)… `);
       const visibleModelRecs = modelRecs.slice(0, 10);
-      const advice = await explainWithGroq(details.name, archetype, visibleModelRecs, USER_PROFILE);
+      let advice = await explainWithGroq(details.name, archetype, visibleModelRecs, USER_PROFILE, activeContractData);
+      advice = makeUnknownAdviceSafer(advice, archetype);
       console.log(`${advice.safeOrders?.length || 0} safe orders, ${advice.avoid?.length || 0} avoids`);
 
       venues.push(buildVenueObject(details, archetype, coords, coords.coordSource));
@@ -945,6 +810,12 @@ async function main() {
         })),
         ...advice,
         confidenceNote: advice.confidenceNote || inferredConfidenceNote,
+        confidence: buildConfidence({
+          archetype,
+          modelUsed: modelServerUp && visibleModelRecs.length > 0,
+          userContractUsed: activeContractData.userContractUsed,
+          menuAvailable: Boolean(details.website),
+        }),
         modelServerUsed:  modelServerUp,
         archetype,
       };
@@ -971,6 +842,13 @@ async function main() {
       pipelineVersion: "2.0.0",
       source:          "Google Maps Places API + Nutrifence joblib models + Groq AI",
       country:         USER_COUNTRY,
+      apiVersion:      "1.1",
+      contractSource:  activeContractData.contractSource,
+      contractStore:   contractStoreInfo(),
+      modelFamily:     USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1"
+        ? "canada_fallback_ai"
+        : COUNTRY_PACK.modelMode,
+      userId:          USER_ID || null,
       userLocation:    { lat: USER_LAT, lng: USER_LNG, radiusMetres: SEARCH_RADIUS },
       userProfile:     USER_PROFILE,
       venueCount:      venues.length,
@@ -992,3 +870,5 @@ main().catch(err => {
   console.error("\n💥 Fatal error:", err.message);
   process.exit(1);
 });
+
+

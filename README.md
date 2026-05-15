@@ -176,6 +176,8 @@ Country behavior:
 - `country: "CA"` uses the Health Canada / Canada's Food Guide contract and Canadian restaurant archetypes.
 - If `country` is omitted, the pipeline infers `CA` or `NG` from the coordinates where possible.
 - Canadian model inference is currently skipped unless `CANADA_MODEL_ENABLED=1`; this keeps the Nigerian model from producing misleading Canadian recommendations until a Canadian model is trained.
+- If `userId` is supplied, the pipeline loads only that user's nutritionist contract.
+- The response includes `_meta.apiVersion`, `_meta.contractSource`, `_meta.modelFamily`, `_meta.cache`, and per-venue `confidence`.
 
 `POST /api/ingest-report` supports:
 - JSON text mode: `{ "userId": "...", "reportText": "..." }`
@@ -269,10 +271,25 @@ Implemented API wrapper endpoints (Node):
 - `GET /model/health` (model health through Node)
 - `POST /recommend`, `/recommend/batch`, `/recommend/food`, `/extract-pdf` (model endpoints proxied through Node)
 
+Per-user nutrition contracts:
+- `POST /api/ingest-report` saves the parsed nutritionist contract by `userId`.
+- `POST /api/recommendations` should send the same `userId` to load that user's contract.
+- By default contracts are stored in local JSON files under `scraper/user_contracts/` for development.
+- For a free hosted database, create a Supabase project, run `supabase_user_contracts.sql`, and set:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_CONTRACT_TABLE=user_contracts
+```
+
+Never expose the Supabase service role key to Flutter or any client app.
+
 Minimal request contract for upstream API layer:
 
 ```json
 {
+  "userId": "firebase_uid",
   "lat": 7.3622,
   "lng": 3.8503,
   "country": "NG",

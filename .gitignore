@@ -12,4 +12,5 @@ scraper/recommendations_*.json
 scraper/ab_*.json
 scraper/ab_comparison.txt
 scraper/user_contract_active.json
+scraper/user_contracts/
 doc_*_extracted_preview.txt

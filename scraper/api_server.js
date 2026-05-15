@@ -6,9 +6,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import http from "http";
 import https from "https";
+import crypto from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { ingestReport } from "./report_ingestion.js";
+import { contractStoreInfo } from "./contract_store.js";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +35,7 @@ loadDotEnv();
 const HOST = process.env.API_HOST || "127.0.0.1";
 const PORT = parseInt(process.env.API_PORT || "8090", 10);
 const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8011").replace(/\/$/, "");
+const CACHE_TTL_MS = parseInt(process.env.RECOMMENDATION_CACHE_TTL_MS || "3600000", 10);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -118,9 +121,42 @@ function listRecommendationOutputs() {
 }
 
 let pipelineBusy = false;
+const responseCache = new Map();
+
+function recommendationCacheKey(payload) {
+  const stable = {
+    country: payload.country || "auto",
+    lat: Number(payload.lat).toFixed(3),
+    lng: Number(payload.lng).toFixed(3),
+    radius: Number(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
+    maxRestaurants: Number(payload.maxRestaurants ?? process.env.MAX_RESTAURANTS ?? "15"),
+    userId: payload.userId || null,
+    userProfile: payload.userProfile || { conditions: [], restrictions: [] },
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+function getCachedRecommendation(key) {
+  const hit = responseCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.createdAt > CACHE_TTL_MS) {
+    responseCache.delete(key);
+    return null;
+  }
+  return {
+    ...hit.value,
+    _meta: {
+      ...(hit.value._meta || {}),
+      cache: { hit: true, key, ttlMs: CACHE_TTL_MS },
+    },
+  };
+}
+
+function setCachedRecommendation(key, value) {
+  responseCache.set(key, { createdAt: Date.now(), value });
+}
 
 async function runPipeline(payload) {
-  if (pipelineBusy) throw new Error("Pipeline is busy. Retry shortly.");
   pipelineBusy = true;
   try {
     const before = listRecommendationOutputs()[0]?.name;
@@ -132,6 +168,7 @@ async function runPipeline(payload) {
       USER_PROFILE: JSON.stringify(payload.userProfile || { conditions: [], restrictions: [] }),
     };
     if (payload.country != null) env.USER_COUNTRY = String(payload.country);
+    if (payload.userId != null) env.USER_ID = String(payload.userId);
     if (payload.maxRestaurants != null) env.MAX_RESTAURANTS = String(payload.maxRestaurants);
 
     await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
@@ -159,7 +196,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && req.url === "/health") {
-      return json(res, 200, { status: "ok", service: "nutrifence-api", port: PORT });
+      return json(res, 200, { status: "ok", service: "nutrifence-api", port: PORT, contractStore: contractStoreInfo() });
     }
 
     if (req.method === "GET" && req.url === "/model/health") {
@@ -181,15 +218,29 @@ const server = http.createServer(async (req, res) => {
       if (typeof lat !== "number" || typeof lng !== "number") {
         return json(res, 422, { error: "lat and lng are required numbers" });
       }
+      if (pipelineBusy) {
+        return json(res, 503, { error: "Pipeline is busy. Retry shortly." });
+      }
 
-      const result = await runPipeline({
+      const payload = {
         lat,
         lng,
         radius: body.radius,
         country: body.country,
+        userId: body.userId,
         userProfile: body.userProfile || { conditions: [], restrictions: [] },
         maxRestaurants: body.maxRestaurants,
-      });
+      };
+      const cacheKey = recommendationCacheKey(payload);
+      const cached = getCachedRecommendation(cacheKey);
+      if (cached) return json(res, 200, cached);
+
+      const result = await runPipeline(payload);
+      result._meta = {
+        ...(result._meta || {}),
+        cache: { hit: false, key: cacheKey, ttlMs: CACHE_TTL_MS },
+      };
+      setCachedRecommendation(cacheKey, result);
       return json(res, 200, result);
     }
 
@@ -212,7 +263,8 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const contract = await ingestReport(filePath, userId);
+        const contract = await ingestReport(filePath, userId, { country: body.country });
+        responseCache.clear();
         return json(res, 200, {
           success: true,
           userId,

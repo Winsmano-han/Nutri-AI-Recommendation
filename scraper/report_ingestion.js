@@ -3,6 +3,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { saveUserContract, contractStoreInfo } from "./contract_store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +29,7 @@ const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const CONTRACT_PATH = path.join(__dirname, "nutrition_contract.json");
+const CANADA_CONTRACT_PATH = path.join(__dirname, "nutrition_contract_canada.json");
 
 if (!GROQ_API_KEY || GROQ_API_KEY === "YOUR_KEY_HERE") {
   console.error("❌ GROQ_API_KEY is not set.");
@@ -60,9 +62,22 @@ async function extractTextFromReport(filePath) {
   throw new Error(`Unsupported file type: ${ext}`);
 }
 
-async function parseReportToContract(reportText, userId) {
-  const contractFile = JSON.parse(fs.readFileSync(CONTRACT_PATH, "utf8"));
-  const parsingConfig = contractFile.userReportParsingPrompt;
+function normalizeCountry(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (["ca", "can", "canada"].includes(raw)) return "CA";
+  if (["ng", "nga", "nigeria"].includes(raw)) return "NG";
+  return "NG";
+}
+
+function loadContractForCountry(country) {
+  const pathForCountry = country === "CA" ? CANADA_CONTRACT_PATH : CONTRACT_PATH;
+  return JSON.parse(fs.readFileSync(pathForCountry, "utf8"));
+}
+
+async function parseReportToContract(reportText, userId, country = "NG") {
+  const parserContract = JSON.parse(fs.readFileSync(CONTRACT_PATH, "utf8"));
+  const countryContract = loadContractForCountry(country);
+  const parsingConfig = parserContract.userReportParsingPrompt;
   const timestamp = new Date().toISOString();
 
   const userPrompt = parsingConfig.userPrompt
@@ -97,7 +112,7 @@ async function parseReportToContract(reportText, userId) {
 
   try {
     const parsed = JSON.parse(cleaned);
-    const normMap = contractFile.backendNormalization?.conditionAliases || {};
+    const normMap = countryContract.backendNormalization?.conditionAliases || {};
     parsed.constraints = parsed.constraints || {};
     parsed.constraints.conditions = (parsed.constraints.conditions || []).map((c) => {
       const key = String(c || "").toLowerCase().trim();
@@ -107,33 +122,31 @@ async function parseReportToContract(reportText, userId) {
     parsed.reportId = `user_report_${userId}_${Date.now()}`;
     parsed.createdAt = timestamp;
     parsed.userId = userId;
+    parsed.country = country;
     return parsed;
   } catch (e) {
     throw new Error(`Contract parsing failed: ${e.message}\nRaw: ${rawText.slice(0, 200)}`);
   }
 }
 
-function saveActiveContract(contract, userId) {
-  const outputPath = path.join(__dirname, "user_contract_active.json");
-  fs.writeFileSync(outputPath, JSON.stringify(contract, null, 2), "utf8");
-  console.log(`✅ Contract saved for user ${userId}: ${outputPath}`);
-}
-
-async function ingestReport(filePath, userId) {
+async function ingestReport(filePath, userId, options = {}) {
+  const country = normalizeCountry(options.country || process.env.USER_COUNTRY || process.env.COUNTRY);
   console.log(`📄 Ingesting report: ${filePath}`);
   const text = await extractTextFromReport(filePath);
   console.log(`  Extracted ${text.length} chars`);
 
-  const contract = await parseReportToContract(text, userId);
+  const contract = await parseReportToContract(text, userId, country);
   console.log(`  Conditions: ${(contract.constraints?.conditions || []).join(", ") || "none"}`);
   console.log(`  LLM instructions: ${(contract.llmInstructions || []).length}`);
-  saveActiveContract(contract, userId);
+  const saved = await saveUserContract(userId, contract);
+  console.log(`✅ Contract saved for user ${userId} via ${saved.backend}`);
   return contract;
 }
 
-const [, , filePath, userId] = process.argv;
+const [, , filePath, userId, countryArg] = process.argv;
 if (filePath && userId) {
-  ingestReport(filePath, userId).catch((err) => {
+  console.log(`Contract store: ${JSON.stringify(contractStoreInfo())}`);
+  ingestReport(filePath, userId, { country: countryArg }).catch((err) => {
     console.error(`❌ Ingestion failed: ${err.message}`);
     process.exit(1);
   });

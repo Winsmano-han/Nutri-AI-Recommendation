@@ -74,6 +74,7 @@ Example request:
 
 ```json
 {
+  "userId": "firebase_uid_here",
   "lat": 7.3622,
   "lng": 3.8503,
   "country": "NG",
@@ -90,6 +91,7 @@ Request fields:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
+| `userId` | Strongly recommended | Firebase UID. Backend uses it to load that user's nutritionist contract. |
 | `lat` | Yes | User latitude from Geolocator. Must be a number. |
 | `lng` | Yes | User longitude from Geolocator. Must be a number. |
 | `country` | No | `NG` for Nigeria or `CA` for Canada. If omitted, backend infers from coordinates when possible. |
@@ -115,6 +117,12 @@ Canada example:
 ```
 
 `country: "CA"` activates the Health Canada / Canada's Food Guide contract and Canadian restaurant archetypes. Canadian model inference is intentionally skipped until a Canadian model is trained, so Canada recommendations currently use the Canada contract plus AI knowledge.
+
+Per-user contract rule:
+
+- Send the same Firebase UID to `/api/ingest-report` and `/api/recommendations`.
+- The backend no longer uses one global `user_contract_active.json`.
+- If `userId` is omitted, recommendations still work, but only the country baseline contract and `userProfile` are used.
 
 Example response shape:
 
@@ -367,6 +375,8 @@ Suggested UI mapping:
 | `tip` | Bottom tip/banner |
 | `confidenceNote` | Caution banner |
 | `venue.archetypeDesc` | Venue subtitle |
+| `confidence.overall` | Optional confidence indicator |
+| `confidence.menuAvailability` | Use to show "No menu available" or "estimated from venue type" |
 
 The old `RankedRecommendation.score` can be hidden or replaced with simple ordering. The backend already returns the safe orders in display order.
 
