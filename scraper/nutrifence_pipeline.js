@@ -69,6 +69,9 @@ if (!GROQ_API_KEY || GROQ_API_KEY === "YOUR_KEY_HERE") {
 
 const GROQ_MODEL   = "llama-3.3-70b-versatile";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GOOGLE_TIMEOUT_MS = parseInt(process.env.GOOGLE_TIMEOUT_MS || "20000", 10);
+const GROQ_TIMEOUT_MS = parseInt(process.env.GROQ_TIMEOUT_MS || "45000", 10);
+const MODEL_TIMEOUT_MS = parseInt(process.env.MODEL_TIMEOUT_MS || "20000", 10);
 
 // Default coords: Ibadan city center (University of Ibadan area)
 const USER_LAT      = parseFloat(process.env.USER_LAT  || "7.3775");
@@ -214,7 +217,7 @@ async function searchNearbyRestaurants(lat, lng, pageToken = null) {
 
   if (pageToken) url += `&pagetoken=${pageToken}`;
 
-  const res  = await fetch(url);
+  const res  = await fetch(url, { signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
   const data = await res.json();
 
   if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
@@ -247,7 +250,7 @@ async function getPlaceDetails(placeId) {
     `&fields=${fields}` +
     `&key=${GOOGLE_MAPS_API_KEY}`;
 
-  const res  = await fetch(url);
+  const res  = await fetch(url, { signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
   const data = await res.json();
 
   if (data.status !== "OK") {
@@ -382,6 +385,7 @@ async function getModelRecommendations(archetype, userConditions) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -568,7 +572,10 @@ async function groqWithRetry(url, options, maxRetries = 3) {
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        ...options,
+        signal: options.signal || AbortSignal.timeout(GROQ_TIMEOUT_MS),
+      });
 
       if (response.status === 429) {
         const retryAfter = response.headers.get("retry-after");

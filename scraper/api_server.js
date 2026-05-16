@@ -36,6 +36,7 @@ const HOST = process.env.API_HOST || "127.0.0.1";
 const PORT = parseInt(process.env.API_PORT || "8090", 10);
 const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8011").replace(/\/$/, "");
 const CACHE_TTL_MS = parseInt(process.env.RECOMMENDATION_CACHE_TTL_MS || "3600000", 10);
+const MAX_PIPELINE_QUEUE = parseInt(process.env.MAX_PIPELINE_QUEUE || "20", 10);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -120,8 +121,9 @@ function listRecommendationOutputs() {
     .sort((a, b) => b.mtime - a.mtime);
 }
 
-let pipelineBusy = false;
 const responseCache = new Map();
+const pipelineQueue = [];
+let pipelineActive = false;
 
 function recommendationCacheKey(payload) {
   const stable = {
@@ -157,35 +159,80 @@ function setCachedRecommendation(key, value) {
 }
 
 async function runPipeline(payload) {
-  pipelineBusy = true;
-  try {
-    const before = listRecommendationOutputs()[0]?.name;
-    const env = {
-      ...process.env,
-      USER_LAT: String(payload.lat),
-      USER_LNG: String(payload.lng),
-      SEARCH_RADIUS: String(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
-      USER_PROFILE: JSON.stringify(payload.userProfile || { conditions: [], restrictions: [] }),
-    };
-    if (payload.country != null) env.USER_COUNTRY = String(payload.country);
-    if (payload.userId != null) env.USER_ID = String(payload.userId);
-    if (payload.maxRestaurants != null) env.MAX_RESTAURANTS = String(payload.maxRestaurants);
+  const before = listRecommendationOutputs()[0]?.name;
+  const env = {
+    ...process.env,
+    USER_LAT: String(payload.lat),
+    USER_LNG: String(payload.lng),
+    SEARCH_RADIUS: String(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
+    USER_PROFILE: JSON.stringify(payload.userProfile || { conditions: [], restrictions: [] }),
+  };
+  if (payload.country != null) env.USER_COUNTRY = String(payload.country);
+  if (payload.userId != null) env.USER_ID = String(payload.userId);
+  if (payload.maxRestaurants != null) env.MAX_RESTAURANTS = String(payload.maxRestaurants);
 
-    await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
-      cwd: __dirname,
-      env,
-      windowsHide: true,
-      maxBuffer: 10 * 1024 * 1024,
+  await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
+    cwd: __dirname,
+    env,
+    windowsHide: true,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  const outputs = listRecommendationOutputs();
+  const latest = outputs[0];
+  if (!latest || latest.name === before) {
+    throw new Error("Pipeline ran but no new recommendations file was detected");
+  }
+  return JSON.parse(fs.readFileSync(latest.full, "utf8"));
+}
+
+function pipelineQueueStatus() {
+  return {
+    active: pipelineActive,
+    waiting: pipelineQueue.length,
+    maxWaiting: MAX_PIPELINE_QUEUE,
+  };
+}
+
+function enqueuePipeline(payload) {
+  if (pipelineQueue.length >= MAX_PIPELINE_QUEUE) {
+    const err = new Error("Pipeline queue is full. Retry shortly.");
+    err.statusCode = 503;
+    throw err;
+  }
+
+  return new Promise((resolve, reject) => {
+    pipelineQueue.push({
+      payload,
+      enqueuedAt: Date.now(),
+      resolve,
+      reject,
     });
+    processPipelineQueue();
+  });
+}
 
-    const outputs = listRecommendationOutputs();
-    const latest = outputs[0];
-    if (!latest || latest.name === before) {
-      throw new Error("Pipeline ran but no new recommendations file was detected");
-    }
-    return JSON.parse(fs.readFileSync(latest.full, "utf8"));
+async function processPipelineQueue() {
+  if (pipelineActive) return;
+  const job = pipelineQueue.shift();
+  if (!job) return;
+
+  pipelineActive = true;
+  try {
+    const result = await runPipeline(job.payload);
+    result._meta = {
+      ...(result._meta || {}),
+      queue: {
+        waitedMs: Date.now() - job.enqueuedAt,
+        remaining: pipelineQueue.length,
+      },
+    };
+    job.resolve(result);
+  } catch (err) {
+    job.reject(err);
   } finally {
-    pipelineBusy = false;
+    pipelineActive = false;
+    setImmediate(processPipelineQueue);
   }
 }
 
@@ -196,7 +243,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && req.url === "/health") {
-      return json(res, 200, { status: "ok", service: "nutrifence-api", port: PORT, contractStore: contractStoreInfo() });
+      return json(res, 200, {
+        status: "ok",
+        service: "nutrifence-api",
+        port: PORT,
+        contractStore: contractStoreInfo(),
+        pipelineQueue: pipelineQueueStatus(),
+      });
     }
 
     if (req.method === "GET" && req.url === "/model/health") {
@@ -218,10 +271,6 @@ const server = http.createServer(async (req, res) => {
       if (typeof lat !== "number" || typeof lng !== "number") {
         return json(res, 422, { error: "lat and lng are required numbers" });
       }
-      if (pipelineBusy) {
-        return json(res, 503, { error: "Pipeline is busy. Retry shortly." });
-      }
-
       const payload = {
         lat,
         lng,
@@ -235,7 +284,7 @@ const server = http.createServer(async (req, res) => {
       const cached = getCachedRecommendation(cacheKey);
       if (cached) return json(res, 200, cached);
 
-      const result = await runPipeline(payload);
+      const result = await enqueuePipeline(payload);
       result._meta = {
         ...(result._meta || {}),
         cache: { hit: false, key: cacheKey, ttlMs: CACHE_TTL_MS },
@@ -278,7 +327,7 @@ const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { error: "Not found" });
   } catch (err) {
-    return json(res, 500, { error: err.message || "Internal server error" });
+    return json(res, err.statusCode || 500, { error: err.message || "Internal server error" });
   }
 });
 
