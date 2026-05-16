@@ -425,8 +425,8 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
   const nutritionBlock = buildNutritionPromptBlock(contractData, userProfile);
   const archetypeDesc = ARCHETYPES[archetype];
   const conditions = contractData.normalizedConditions.join(", ") || "none";
+  const restrictions = (userProfile?.restrictions || []).join(", ") || "none";
   const countryLabel = USER_COUNTRY === "CA" ? "Canadian" : "Nigerian";
-  const foodGuideName = USER_COUNTRY === "CA" ? "Canada's Food Guide" : "Nigerian Food-Based Dietary Guidelines";
   const contextTip = USER_COUNTRY === "CA"
     ? "Canadian context (e.g. sauces/dressings/gravy on the side, water instead of pop, grilled/baked instead of fried, salad/vegetables instead of fries or poutine)"
     : "Nigerian context (e.g. ask for soup without stock cubes, choose grilled/boiled instead of fried)";
@@ -443,7 +443,7 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
     return obj;
   };
   const recList = modelRecs
-    .slice(0, 15) // cap prompt size
+    .slice(0, 15)
     .map((r, i) => `${i + 1}. ${r.dish_name} (similarity: ${(r.similarity_score || 0).toFixed(2)}, health_label: ${r.health_label || "unknown"})`)
     .join("\n");
 
@@ -453,37 +453,39 @@ Restaurant: "${restaurantName}"
 Type: ${archetypeDesc}
 Country context: ${USER_COUNTRY}
 
-Active normalized conditions: ${conditions}
+User Profile:
+- Conditions: ${conditions}
+- Restrictions: ${restrictions}
 
 ${nutritionBlock}
 
-The following dishes were ranked by our AI recommendation model as most relevant for this restaurant type:
-${recList || "(no model recommendations available — use your knowledge of this restaurant type)"}
+The following dishes were ranked by our AI recommendation model for this restaurant type:
+${recList || "(no model recommendations available)"}
 
-Using both the model recommendations and your knowledge of ${countryLabel} restaurant food:
+TASK:
+1. Filter the model recommendations against the user's profile.
+2. If a model recommendation violates a restriction (e.g., "low sugar" vs "Caramelized Coconut"), you MUST DISCARD it.
+3. Select 3-5 "safeOrders".
+4. Identify 2-3 "avoid" items.
 
-Return a JSON object with exactly this shape:
+Return a JSON object:
 {
   "safeOrders": [
-    { "dish": "dish name", "reason": "one sentence why it is safe for this user", "source": "model|ai_knowledge" }
+    { "dish": "dish name", "reason": "one sentence why it is safe", "source": "model|ai_knowledge" }
   ],
   "avoid": [
     { "item": "dish or category", "reason": "one sentence why to avoid" }
   ],
-  "tip": "one practical ordering tip for this specific restaurant type in this country",
-  "confidenceNote": "short note if recommendation confidence is low, else null"
+  "tip": "one practical ordering tip",
+  "confidenceNote": "short note if confidence is low, else null"
 }
 
-Rules:
-- safeOrders: 3 to 5 items. Prefer items from the model list. Add from your knowledge only if list is thin.
-- source: "model" ONLY if the exact dish appears in the ranked model list above.
-          Use "ai_knowledge" if you added the dish from your own knowledge.
-- avoid: 2 to 3 items. Must reference specific active conditions when present.
-- tip: must be specific to ${contextTip}, not generic advice.
-- tip must never claim palm oil, extra fried foods, or excessive red meat are healthier choices.
-- even with no stated conditions, keep cardiovascular-safe guidance.
-- If conditions is "none", give general healthy guidance aligned with ${foodGuideName}.
-- Return ONLY the JSON object. No markdown, no explanation, no code fences.`;
+CRITICAL RULES:
+- NEVER suggest a dish that violates "USER DIETARY RESTRICTIONS" or "AVOID" lists in the nutrition contract.
+- If the model list contains high-sugar or fried items and the user is on "weight_loss" or "low sugar", move those items to the "avoid" list instead.
+- source: "model" ONLY if the dish is in the ranked list above AND you kept it.
+- tip: must be specific to ${contextTip}.
+- Return ONLY the JSON object.`;
 
   const response = await groqWithRetry(GROQ_API_URL, {
     method:  "POST",
