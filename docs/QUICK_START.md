@@ -11,7 +11,7 @@ dir best_models_bundle\models\*.joblib
 
 # You should see:
 # - recommender_nigeria.joblib
-# - recommender_nigeria_dishes_extended.joblib
+# - recommender_nigeria_dishes_v3_weighted.joblib
 ```
 
 ## Step 2: Push to GitHub

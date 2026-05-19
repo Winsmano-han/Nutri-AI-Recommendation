@@ -213,7 +213,7 @@ async def extract_pdf(file: UploadFile = File(...)):
 @app.post("/recommend", response_model=dict)
 async def recommend_dishes(req: DishRecommendRequest):
     """
-    Primary endpoint. Uses recommender_nigeria_dishes_extended.joblib.
+    Primary endpoint. Uses recommender_nigeria_dishes_v3_weighted.joblib by default.
     Accepts free text, dish name, or dish ID as seed.
     Optionally filters by health condition and region.
     """

@@ -22,7 +22,7 @@ Given a user location and profile:
 
 - `best_models_bundle/`
   - `models/recommender_nigeria.joblib`
-  - `models/recommender_nigeria_dishes_extended.joblib`
+  - `models/recommender_nigeria_dishes_v3_weighted.joblib`
   - `utils/recommender.py` (food recommender logic)
   - `utils/dish_recommender.py` (dish recommender logic)
   - training/inference scripts
@@ -89,7 +89,7 @@ From project root:
 ```bash
 cd scraper
 set PYTHONPATH=..\\best_models_bundle
-set DISH_MODEL_PATH=..\\best_models_bundle\\models\\recommender_nigeria_dishes_extended.joblib
+set DISH_MODEL_PATH=..\\best_models_bundle\\models\\recommender_nigeria_dishes_v3_weighted.joblib
 set FOOD_MODEL_PATH=..\\best_models_bundle\\models\\recommender_nigeria.joblib
 python -m uvicorn model_server:app --host 127.0.0.1 --port 8011
 ```

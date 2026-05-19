@@ -21,7 +21,7 @@ fi
 export PYTHONPATH="${PYTHONPATH}:${ROOT_DIR}/best_models_bundle"
 
 # Set model paths
-export DISH_MODEL_PATH="${ROOT_DIR}/best_models_bundle/models/recommender_nigeria_dishes_extended.joblib"
+export DISH_MODEL_PATH="${ROOT_DIR}/best_models_bundle/models/recommender_nigeria_dishes_v3_weighted.joblib"
 export FOOD_MODEL_PATH="${ROOT_DIR}/best_models_bundle/models/recommender_nigeria.joblib"
 
 echo "Dish model path: ${DISH_MODEL_PATH}"

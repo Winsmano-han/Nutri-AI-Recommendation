@@ -96,7 +96,7 @@ NODE_VERSION=18.0.0
 MODEL_API_URL=http://127.0.0.1:8011
 API_HOST=0.0.0.0
 PYTHONPATH=./best_models_bundle
-DISH_MODEL_PATH=./best_models_bundle/models/recommender_nigeria_dishes_extended.joblib
+DISH_MODEL_PATH=./best_models_bundle/models/recommender_nigeria_dishes_v3_weighted.joblib
 FOOD_MODEL_PATH=./best_models_bundle/models/recommender_nigeria.joblib
 ```
 

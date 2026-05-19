@@ -65,7 +65,7 @@ uvicorn model_server:app --host 0.0.0.0 --port 8000 --reload
 
 Put your two model files at:
 ```
-models/recommender_nigeria_dishes_extended.joblib
+models/recommender_nigeria_dishes_v3_weighted.joblib
 models/recommender_nigeria.joblib
 ```
 
@@ -232,7 +232,7 @@ The Flutter app only needs to:
 | `SEARCH_RADIUS` | No | `2000` | Search radius in metres |
 | `MAX_RESTAURANTS` | No | `15` | Max venues to process per run |
 | `USER_PROFILE` | No | `{}` | JSON: `{"conditions":[],"restrictions":[]}` |
-| `DISH_MODEL_PATH` | No | `models/recommender_nigeria_dishes_extended.joblib` | Path to dish model |
+| `DISH_MODEL_PATH` | No | `models/recommender_nigeria_dishes_v3_weighted.joblib` | Path to dish model |
 | `FOOD_MODEL_PATH` | No | `models/recommender_nigeria.joblib` | Path to food model |
 | `INSPECT_PLACES_ONLY` | No | `0` | Set to `1` to debug Places API results |
 
@@ -262,6 +262,6 @@ model_server.py          ← Python FastAPI server (runs the .joblib models)
 README.md                ← this file
 
 models/
-  recommender_nigeria_dishes_extended.joblib
+  recommender_nigeria_dishes_v3_weighted.joblib
   recommender_nigeria.joblib
 ```
