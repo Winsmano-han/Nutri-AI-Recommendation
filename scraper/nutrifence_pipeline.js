@@ -413,6 +413,42 @@ async function getModelRecommendations(archetype, userConditions) {
   return merged.sort((a, b) => (b.similarity_score || 0) - (a.similarity_score || 0));
 }
 
+function shouldSkipModelForArchetype(archetype) {
+  if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") return true;
+  return false;
+}
+
+function filterModelRecommendationsForArchetype(archetype, recommendations) {
+  const items = Array.isArray(recommendations) ? recommendations : [];
+  if (USER_COUNTRY !== "NG") return items;
+
+  if (archetype === "fast_food_western" || archetype === "fast_food_nigerian") {
+    const implausibleFastFoodTerms = [
+      "amala",
+      "eba",
+      "semovita",
+      "wheat swallow",
+      "pounded yam",
+      "iyan",
+      "tuwo",
+      "starch",
+      "egusi",
+      "ewedu",
+      "gbegiri",
+      "ogbono",
+      "oha soup",
+      "banga soup",
+      "pepper soup",
+    ];
+    return items.filter((item) => {
+      const dish = String(item.dish_name || "").toLowerCase();
+      return !implausibleFastFoodTerms.some((term) => dish.includes(term));
+    });
+  }
+
+  return items;
+}
+
 // ─── Groq recommendation explainer ───────────────────────────────────────────
 
 /**
@@ -677,11 +713,56 @@ function makeUnknownAdviceSafer(advice, archetype) {
   };
 }
 
+function fallbackSafeOrders(archetype) {
+  const fallbackByCountry = USER_COUNTRY === "CA"
+    ? [
+        { dish: "Ask if available: grilled chicken or fish with vegetables", reason: "It is a lean protein option with vegetables and can fit the active nutrition guidance when prepared without sugary sauces.", source: "ai_knowledge" },
+        { dish: "Ask if available: salad or vegetables with dressing on the side", reason: "It increases vegetable intake and helps reduce excess sodium, sugar, and saturated fat from sauces.", source: "ai_knowledge" },
+        { dish: "Ask if available: water or unsweetened tea", reason: "It avoids sugary drinks and aligns with Canada's Food Guide.", source: "ai_knowledge" },
+      ]
+    : [
+        { dish: "Ask if available: grilled fish or grilled chicken", reason: "It is a leaner protein choice when prepared with little oil and no sugary sauce.", source: "ai_knowledge" },
+        { dish: "Ask if available: vegetable soup or salad", reason: "It adds vegetables and fibre while avoiding fried sides.", source: "ai_knowledge" },
+        { dish: "Ask if available: water instead of sugary drinks", reason: "It avoids added sugar and supports the active nutrition guidance.", source: "ai_knowledge" },
+      ];
+
+  if (archetype === "fast_food_western" || archetype === "canadian_fast_food") {
+    return [
+      { dish: "Grilled Chicken", reason: "It is generally a safer lean-protein option than fried chicken when available and ordered without sugary sauces.", source: "ai_knowledge" },
+      { dish: "Side Salad", reason: "It adds vegetables and fibre and is safer than fries when dressing is served on the side.", source: "ai_knowledge" },
+      { dish: "Water", reason: "It avoids sugary drinks and supports low-sugar guidance.", source: "ai_knowledge" },
+    ];
+  }
+
+  return fallbackByCountry;
+}
+
+function normaliseAdviceShape(advice, archetype) {
+  const safeOrders = Array.isArray(advice.safeOrders) ? advice.safeOrders : [];
+  const avoid = Array.isArray(advice.avoid) ? advice.avoid : [];
+  const existing = new Set(safeOrders.map((item) => String(item.dish || "").toLowerCase()));
+
+  for (const item of fallbackSafeOrders(archetype)) {
+    if (safeOrders.length >= 3) break;
+    const key = String(item.dish || "").toLowerCase();
+    if (!existing.has(key)) {
+      safeOrders.push(item);
+      existing.add(key);
+    }
+  }
+
+  return {
+    ...advice,
+    safeOrders: safeOrders.slice(0, 5),
+    avoid: avoid.slice(0, 3),
+  };
+}
+
 // ─── Health the model server before starting ──────────────────────────────────
 
 async function checkModelServer() {
   try {
-    const res = await fetch(`${MODEL_API_URL}/health`, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${MODEL_API_URL}/health`, { signal: AbortSignal.timeout(MODEL_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     console.log(`  ✅ Model server healthy — models loaded: ${data.models_loaded?.join(", ") || "unknown"}`);
@@ -784,10 +865,11 @@ async function main() {
       let modelRecs = [];
       if (modelServerUp) {
         process.stdout.write(`  🤖 Model inference (${ARCHETYPE_SEEDS[archetype].length} seeds)… `);
-        modelRecs = await getModelRecommendations(archetype, USER_PROFILE.conditions || []);
-        if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") {
-          console.log("skipped until Canadian model is added");
+        if (shouldSkipModelForArchetype(archetype)) {
+          console.log("skipped for this archetype/model mode");
         } else {
+          modelRecs = await getModelRecommendations(archetype, USER_PROFILE.conditions || []);
+          modelRecs = filterModelRecommendationsForArchetype(archetype, modelRecs);
           console.log(`${modelRecs.length} ranked dishes`);
         }
       } else {
@@ -798,6 +880,7 @@ async function main() {
       process.stdout.write(`  💬 Generating advice (Groq)… `);
       const visibleModelRecs = modelRecs.slice(0, 10);
       let advice = await explainWithGroq(details.name, archetype, visibleModelRecs, USER_PROFILE, activeContractData);
+      advice = normaliseAdviceShape(advice, archetype);
       advice = makeUnknownAdviceSafer(advice, archetype);
       console.log(`${advice.safeOrders?.length || 0} safe orders, ${advice.avoid?.length || 0} avoids`);
 

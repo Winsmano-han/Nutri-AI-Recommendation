@@ -5,7 +5,7 @@ FastAPI server that loads both .joblib recommendation models and exposes
 clean HTTP endpoints for the Node.js pipeline to call.
 
 Models served:
-  - recommender_nigeria_dishes_extended.joblib  →  /recommend  (primary)
+  - recommender_nigeria_dishes_v3_weighted.joblib →  /recommend  (primary)
   - recommender_nigeria.joblib                  →  /recommend/food  (ingredient-level)
 
 Usage:
@@ -15,7 +15,7 @@ Required:
   pip install fastapi uvicorn joblib scikit-learn pandas numpy
 
 Environment variables (optional):
-  DISH_MODEL_PATH   — path to dish joblib file  (default: models/recommender_nigeria_dishes_extended.joblib)
+  DISH_MODEL_PATH   — path to dish joblib file  (default: models/recommender_nigeria_dishes_v3_weighted.joblib)
   FOOD_MODEL_PATH   — path to food joblib file  (default: models/recommender_nigeria.joblib)
 """
 
@@ -55,7 +55,7 @@ log = logging.getLogger("nutrifence")
 
 DISH_MODEL_PATH = os.getenv(
     "DISH_MODEL_PATH",
-    os.path.join(BUNDLE_ROOT, "models", "recommender_nigeria_dishes_extended.joblib")
+    os.path.join(BUNDLE_ROOT, "models", "recommender_nigeria_dishes_v3_weighted.joblib")
 )
 FOOD_MODEL_PATH = os.getenv(
     "FOOD_MODEL_PATH",

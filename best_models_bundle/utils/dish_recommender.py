@@ -42,10 +42,13 @@ def train_dish_recommender(
     text_cols: Optional[list[str]] = None,
     categorical_cols: Optional[list[str]] = None,
     numeric_cols: Optional[list[str]] = None,
+    text_weight: float = 1.0,
+    numeric_weight: float = 1.0,
+    categorical_weight: float = 1.0,
 ) -> DishRecommenderArtifact:
-    text_cols = text_cols or ["dish_name", "main_ingredients", "description"]
-    categorical_cols = categorical_cols or ["health_label", "food_class", "region", "spice_level", "price_range"]
-    numeric_cols = numeric_cols or [
+    text_cols = ["dish_name", "main_ingredients", "description"] if text_cols is None else text_cols
+    categorical_cols = ["health_label", "food_class", "region", "spice_level", "price_range"] if categorical_cols is None else categorical_cols
+    numeric_cols = [
         "est_energy_kcal",
         "est_protein_g",
         "est_fat_total_g",
@@ -53,7 +56,7 @@ def train_dish_recommender(
         "est_fiber_g",
         "est_sugar_total_g",
         "est_sodium_mg",
-    ]
+    ] if numeric_cols is None else numeric_cols
 
     df = dish_df.copy().reset_index(drop=True)
     if df.empty:
@@ -75,9 +78,8 @@ def train_dish_recommender(
         s = pd.to_numeric(df[c], errors="coerce")
         df[c] = s.fillna(s.median() if s.notna().any() else 0.0)
 
-    pre = ColumnTransformer(
-        transformers=[
-            (
+    transformers = [
+        (
                 "text",
                 TfidfVectorizer(
                     lowercase=True,
@@ -87,10 +89,22 @@ def train_dish_recommender(
                     stop_words="english",
                 ),
                 "text",
-            ),
-            ("num", StandardScaler(with_mean=True, with_std=True), numeric_cols),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
-        ],
+        )
+    ]
+    if numeric_cols:
+        transformers.append(("num", StandardScaler(with_mean=True, with_std=True), numeric_cols))
+    if categorical_cols:
+        transformers.append(("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols))
+
+    transformer_weights = {"text": text_weight}
+    if numeric_cols:
+        transformer_weights["num"] = numeric_weight
+    if categorical_cols:
+        transformer_weights["cat"] = categorical_weight
+
+    pre = ColumnTransformer(
+        transformers=transformers,
+        transformer_weights=transformer_weights,
         remainder="drop",
         sparse_threshold=0.3,
     )
@@ -103,9 +117,19 @@ def train_dish_recommender(
     nn.fit(embedding)
 
     feature_columns = ["text", *numeric_cols, *categorical_cols]
-    keep_cols = ["dish_id", "dish_name", "main_ingredients", "description", *categorical_cols]
-    # Keep numeric cols if present (for UI + health filters)
-    keep_cols += [c for c in numeric_cols if c in df.columns]
+    ui_categorical_cols = ["health_label", "food_class", "region", "spice_level", "price_range"]
+    ui_numeric_cols = [
+        "est_energy_kcal",
+        "est_protein_g",
+        "est_fat_total_g",
+        "est_carbs_total_g",
+        "est_fiber_g",
+        "est_sugar_total_g",
+        "est_sodium_mg",
+    ]
+    keep_cols = ["dish_id", "dish_name", "main_ingredients", "description", *ui_categorical_cols]
+    # Keep nutrient estimates for UI and condition filters even when not used as vector features.
+    keep_cols += [c for c in ui_numeric_cols if c in df.columns]
     keep_cols += [c for c in ["has_recipe", "recipe_name", "recipe_procedures", "flag_diabetes_risk", "flag_hypertension_risk"] if c in df.columns]
     for c in keep_cols:
         if c not in df.columns:
@@ -179,7 +203,14 @@ def recommend_dishes(
                 if c == "text":
                     continue
                 if c not in tmp.columns:
-                    tmp[c] = 0.0 if c.startswith("est_") else ""
+                    if c.startswith("est_") and c in artifact.dish_df.columns:
+                        values = pd.to_numeric(artifact.dish_df[c], errors="coerce")
+                        tmp[c] = values.median() if values.notna().any() else 0.0
+                    elif c in artifact.dish_df.columns:
+                        mode = artifact.dish_df[c].fillna("").astype(str).mode()
+                        tmp[c] = mode.iat[0] if not mode.empty else ""
+                    else:
+                        tmp[c] = 0.0 if c.startswith("est_") else ""
             seed_vec = artifact.pipeline.transform(tmp)
             if not isinstance(seed_vec, np.ndarray):
                 seed_vec = seed_vec.toarray()
@@ -190,7 +221,10 @@ def recommend_dishes(
             pairs = list(zip(idxs, sims))
             if region_mask is not None:
                 pairs = [(i, s) for (i, s) in pairs if bool(region_mask.iat[i])]
+            pairs = [(i, s) for (i, s) in pairs if s > 0.15]
             pairs = pairs[:top_k]
+            if not pairs:
+                return df.iloc[[]].copy()
             recs = df.iloc[[i for i, _ in pairs]].copy()
             recs["similarity"] = [s for _, s in pairs]
             recs = recs.reset_index(drop=True)
@@ -233,7 +267,7 @@ def _apply_condition_filter(recs: pd.DataFrame, condition: Optional[str]) -> pd.
         ing_l = _col_series("main_ingredients") + " " + _col_series("recipe_ingredients")
         text_l = name_l + " " + ing_l
         bad_kw = text_l.str.contains(
-            r"\bsweet\b|\bsugar\b|\bcaramel\w*\b|\bsoda\b|\bsoft drink\b|\bjuice\b|\bsyrup\b|\bhoney\b",
+            r"\bsweet\b|\bsugar\b|\bcaramel\w*\b|\bsoda\b|\bsoft drink\b|\bjuice\b|\bsyrup\b|\bhoney\b|\bfried\b|\bfries\b|\bchips\b|\bburger\b|\bpizza\b",
             regex=True,
             na=False,
         )
