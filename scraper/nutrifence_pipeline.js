@@ -33,11 +33,13 @@
 
 import fs   from "fs";
 import path from "path";
+import dns from "dns";
 import { fileURLToPath } from "url";
 import { loadCountryPack, normalizeCountry, inferCountryFromCoordinates } from "./country_packs/index.js";
 import { loadUserContract, contractStoreInfo } from "./contract_store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dns.setDefaultResultOrder("ipv4first");
 
 // ─── Load .env ────────────────────────────────────────────────────────────────
 
@@ -135,7 +137,14 @@ async function loadActiveContract(userProfile) {
     normalizedConditions.map((c) => tableMap[c]).filter(Boolean)
   )];
 
-  const userContract = USER_ID ? await loadUserContract(USER_ID) : null;
+  let userContract = null;
+  if (USER_ID) {
+    try {
+      userContract = await loadUserContract(USER_ID);
+    } catch (err) {
+      console.warn(`⚠️  Could not load user contract for ${USER_ID}: ${err.message}`);
+    }
+  }
 
   return {
     defaultContract,
@@ -217,7 +226,12 @@ async function searchNearbyRestaurants(lat, lng, pageToken = null) {
 
   if (pageToken) url += `&pagetoken=${pageToken}`;
 
-  const res  = await fetch(url, { signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
+  let res;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
+  } catch (err) {
+    throw new Error(`Google Places nearby search fetch failed: ${err.message}`);
+  }
   const data = await res.json();
 
   if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
@@ -250,7 +264,12 @@ async function getPlaceDetails(placeId) {
     `&fields=${fields}` +
     `&key=${GOOGLE_MAPS_API_KEY}`;
 
-  const res  = await fetch(url, { signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
+  let res;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
+  } catch (err) {
+    throw new Error(`Google Place Details fetch failed for ${placeId}: ${err.message}`);
+  }
   const data = await res.json();
 
   if (data.status !== "OK") {
@@ -381,12 +400,17 @@ async function getModelRecommendations(archetype, userConditions) {
   const body = { seeds, top_k: 6 };
   if (primaryCondition) body.condition = primaryCondition;
 
-  const response = await fetch(`${modelApiUrl}/recommend/batch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-  });
+  let response;
+  try {
+    response = await fetch(`${modelApiUrl}/recommend/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new Error(`Model server batch fetch failed for ${modelApiUrl}/recommend/batch: ${err.message}`);
+  }
 
   if (!response.ok) {
     const err = await response.text();
@@ -422,7 +446,7 @@ function filterModelRecommendationsForArchetype(archetype, recommendations) {
   const items = Array.isArray(recommendations) ? recommendations : [];
   if (USER_COUNTRY !== "NG") return items;
 
-  if (archetype === "fast_food_western" || archetype === "fast_food_nigerian") {
+  if (archetype === "fast_food_western" || archetype === "fast_food_nigerian" || archetype === "shawarma_pizza") {
     const implausibleFastFoodTerms = [
       "amala",
       "eba",
@@ -451,6 +475,92 @@ function filterModelRecommendationsForArchetype(archetype, recommendations) {
 
 // ─── Groq recommendation explainer ───────────────────────────────────────────
 
+function getBrandGuidance(restaurantName, archetype) {
+  const name = String(restaurantName || "").toLowerCase();
+
+  const profiles = [
+    {
+      match: /\bdomino'?s?\b|pizza hut|pizza pizza/,
+      label: "pizza_chain",
+      likelySafe: [
+        "small or medium thin-crust vegetable pizza",
+        "chicken pizza with extra vegetables and less cheese",
+        "side salad if available",
+        "water instead of soda",
+      ],
+      likelyAvoid: ["extra cheese", "large pizza portions", "cheesy bread", "sugary drinks"],
+      note: "For users with no active conditions, pizza can be a safe order when portion size is controlled and vegetables are added.",
+    },
+    {
+      match: /\bkfc\b/,
+      label: "fried_chicken_chain",
+      likelySafe: [
+        "grilled chicken if available",
+        "skinless chicken pieces in a small portion",
+        "coleslaw or salad if available",
+        "water instead of soda",
+      ],
+      likelyAvoid: ["fried chicken bucket", "large fries", "sugary drinks", "creamy dips"],
+      note: "If grilled chicken is unavailable, recommend smaller portions and vegetable sides rather than pretending a full menu is known.",
+    },
+    {
+      match: /chicken republic|mr bigg|tastee|tantalizer|sweet sensation/,
+      label: "nigerian_fast_food_chain",
+      likelySafe: [
+        "grilled chicken if available",
+        "rice with grilled chicken in a moderate portion",
+        "moi moi if available",
+        "coleslaw or vegetable side",
+        "water instead of sugary drinks",
+      ],
+      likelyAvoid: ["fried chicken", "large rice portions", "meat pie or pastries", "sugary drinks"],
+      note: "For users with no active conditions, rice meals are acceptable in moderate portions, especially with lean protein and vegetables.",
+    },
+    {
+      match: /shawarma|pizzadey|pizza|wrap/,
+      label: "pizza_shawarma_spot",
+      likelySafe: [
+        "chicken shawarma with extra vegetables and light sauce",
+        "vegetable pizza in a moderate portion",
+        "chicken pizza with less cheese",
+        "grilled chicken if available",
+        "water instead of soda",
+      ],
+      likelyAvoid: ["extra mayonnaise", "extra cheese", "large portions", "fries and sugary drink combo"],
+      note: "For users with no active conditions, do not avoid shawarma or pizza categorically; recommend portion and sauce modifications.",
+    },
+  ];
+
+  const matched = profiles.find((profile) => profile.match.test(name));
+  if (matched) return matched;
+
+  if (archetype === "shawarma_pizza" || archetype === "pizza_canada") {
+    return profiles[3];
+  }
+  if (archetype === "fast_food_western" || archetype === "canadian_fast_food") {
+    return {
+      label: "generic_fast_food",
+      likelySafe: ["grilled protein if available", "vegetable side or salad", "smaller portion of main item", "water instead of soda"],
+      likelyAvoid: ["large fried sides", "sugary drinks", "extra creamy sauces", "oversized portions"],
+      note: "Use realistic fast-food modifications instead of recommending unrelated local dishes.",
+    };
+  }
+
+  return null;
+}
+
+function buildBrandGuidanceBlock(restaurantName, archetype) {
+  const profile = getBrandGuidance(restaurantName, archetype);
+  if (!profile) return "";
+
+  return `BRAND / VENUE REALISM GUIDANCE:
+Detected profile: ${profile.label}
+Likely safer options to consider: ${profile.likelySafe.join(", ")}
+Likely items to limit or avoid: ${profile.likelyAvoid.join(", ")}
+Venue note: ${profile.note}
+Use this guidance to keep recommendations realistic for the restaurant brand/type.`;
+}
+
 /**
  * Takes the raw model recommendations and asks Groq to:
  *   1. Filter against the user's full clinical profile (all conditions + restrictions)
@@ -466,6 +576,8 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
   const archetypeDesc = ARCHETYPES[archetype];
   const conditions = contractData.normalizedConditions.join(", ") || "none";
   const restrictions = (userProfile?.restrictions || []).join(", ") || "none";
+  const hasActiveHealthFilters =
+    contractData.normalizedConditions.length > 0 || (userProfile?.restrictions || []).length > 0;
   const countryLabel = USER_COUNTRY === "CA" ? "Canadian" : "Nigerian";
   const contextTip = USER_COUNTRY === "CA"
     ? "Canadian context (e.g. sauces/dressings/gravy on the side, water instead of pop, grilled/baked instead of fried, salad/vegetables instead of fries or poutine)"
@@ -499,6 +611,8 @@ User Profile:
 
 ${nutritionBlock}
 
+${buildBrandGuidanceBlock(restaurantName, archetype)}
+
 The following dishes were ranked by our AI recommendation model for this restaurant type:
 ${recList || "(no model recommendations available)"}
 
@@ -523,6 +637,10 @@ Return a JSON object:
 CRITICAL RULES:
 - NEVER suggest a dish that violates "USER DIETARY RESTRICTIONS" or "AVOID" lists in the nutrition contract.
 - If the model list contains high-sugar or fried items and the user is on "weight_loss" or "low sugar", move those items to the "avoid" list instead.
+- Active health filters present: ${hasActiveHealthFilters ? "yes" : "no"}.
+- If active health filters are "no", do NOT behave like a strict therapeutic diet. Recommend balanced, realistic restaurant choices with portion/sauce modifications.
+- If active health filters are "no", pizza, shawarma, rice, and swallow dishes are not automatically avoid items. They can be safeOrders when portion size is moderate and vegetables/lean protein are included.
+- Treat health_label="Limit" as "limit portion or modify" when there are no active health filters. Only move it to avoid if it is clearly excessive for this venue or conflicts with active conditions/restrictions.
 - source: "model" ONLY if the dish is in the ranked list above AND you kept it.
 - tip: must be specific to ${contextTip}.
 - Return ONLY the JSON object.`;
@@ -635,13 +753,13 @@ async function groqWithRetry(url, options, maxRetries = 3) {
       lastError = err;
       if (attempt < maxRetries) {
         const wait = Math.pow(2, attempt + 3) * 1000;
-        console.warn(`  ⏳ Groq network error — retrying in ${wait / 1000}s...`);
+        console.warn(`  ⏳ Groq network error (${err.message}) — retrying in ${wait / 1000}s...`);
         await sleep(wait);
       }
     }
   }
 
-  throw lastError || new Error("Groq request failed after max retries");
+  throw new Error(`Groq fetch failed for ${url}: ${lastError?.message || "request failed after max retries"}`);
 }
 
 function slugify(str) {

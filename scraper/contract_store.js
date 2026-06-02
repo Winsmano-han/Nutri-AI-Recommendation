@@ -21,16 +21,22 @@ function hasSupabase() {
 }
 
 async function supabaseRequest(pathname, options = {}) {
-  const res = await fetch(`${SUPABASE_URL}${pathname}`, {
-    ...options,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-      ...(options.headers || {}),
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${SUPABASE_URL}${pathname}`, {
+      ...options,
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+        ...(options.headers || {}),
+      },
+      signal: options.signal || AbortSignal.timeout(parseInt(process.env.SUPABASE_TIMEOUT_MS || "20000", 10)),
+    });
+  } catch (err) {
+    throw new Error(`Supabase contract store fetch failed for ${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}: ${err.message}`);
+  }
 
   if (!res.ok) {
     throw new Error(`Supabase contract store error ${res.status}: ${await res.text()}`);

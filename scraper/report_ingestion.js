@@ -2,10 +2,12 @@
 
 import fs from "fs";
 import path from "path";
+import dns from "dns";
 import { fileURLToPath } from "url";
 import { saveUserContract, contractStoreInfo } from "./contract_store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dns.setDefaultResultOrder("ipv4first");
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, ".env");
@@ -48,10 +50,15 @@ async function extractTextFromReport(filePath) {
     const formData = new FormData();
     formData.append("file", new Blob([buf], { type: "application/pdf" }), path.basename(filePath));
 
-    const res = await fetch(`${MODEL_API_URL}/extract-pdf`, {
-      method: "POST",
-      body: formData,
-    });
+    let res;
+    try {
+      res = await fetch(`${MODEL_API_URL}/extract-pdf`, {
+        method: "POST",
+        body: formData,
+      });
+    } catch (err) {
+      throw new Error(`PDF extraction fetch failed for ${MODEL_API_URL}/extract-pdf: ${err.message}`);
+    }
     if (!res.ok) {
       throw new Error(`PDF extraction endpoint failed: HTTP ${res.status} ${await res.text()}`);
     }
@@ -85,22 +92,28 @@ async function parseReportToContract(reportText, userId, country = "NG") {
     .replace("{{timestamp}}", timestamp.replace(/[:.]/g, "-"))
     .replace("{{current ISO timestamp}}", timestamp);
 
-  const response = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0,
-      max_tokens: 2500,
-      messages: [
-        { role: "system", content: parsingConfig.systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0,
+        max_tokens: 2500,
+        messages: [
+          { role: "system", content: parsingConfig.systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(parseInt(process.env.GROQ_TIMEOUT_MS || "45000", 10)),
+    });
+  } catch (err) {
+    throw new Error(`Groq report parsing fetch failed for ${GROQ_API_URL}: ${err.message}`);
+  }
 
   if (!response.ok) {
     throw new Error(`Groq parsing failed: HTTP ${response.status} ${await response.text()}`);

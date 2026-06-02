@@ -3,6 +3,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import dns from "dns";
 import { fileURLToPath } from "url";
 import http from "http";
 import https from "https";
@@ -14,6 +15,7 @@ import { contractStoreInfo } from "./contract_store.js";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dns.setDefaultResultOrder("ipv4first");
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, ".env");
@@ -171,12 +173,23 @@ async function runPipeline(payload) {
   if (payload.userId != null) env.USER_ID = String(payload.userId);
   if (payload.maxRestaurants != null) env.MAX_RESTAURANTS = String(payload.maxRestaurants);
 
-  await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
-    cwd: __dirname,
-    env,
-    windowsHide: true,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  try {
+    await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
+      cwd: __dirname,
+      env,
+      windowsHide: true,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  } catch (err) {
+    const stderr = String(err.stderr || "").trim();
+    const stdout = String(err.stdout || "").trim();
+    const detail = [
+      err.message,
+      stderr ? `stderr:\n${stderr.slice(-2000)}` : null,
+      stdout ? `stdout:\n${stdout.slice(-2000)}` : null,
+    ].filter(Boolean).join("\n\n");
+    throw new Error(detail);
+  }
 
   const outputs = listRecommendationOutputs();
   const latest = outputs[0];
@@ -247,6 +260,13 @@ const server = http.createServer(async (req, res) => {
         status: "ok",
         service: "nutrifence-api",
         port: PORT,
+        runtime: { node: process.version },
+        externalConfig: {
+          googleMapsConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY),
+          groqConfigured: Boolean(process.env.GROQ_API_KEY),
+          modelApiUrl: MODEL_API_URL,
+          supabaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY)),
+        },
         contractStore: contractStoreInfo(),
         pipelineQueue: pipelineQueueStatus(),
       });
