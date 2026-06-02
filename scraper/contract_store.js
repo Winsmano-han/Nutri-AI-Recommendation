@@ -35,11 +35,21 @@ async function supabaseRequest(pathname, options = {}) {
       signal: options.signal || AbortSignal.timeout(parseInt(process.env.SUPABASE_TIMEOUT_MS || "20000", 10)),
     });
   } catch (err) {
-    throw new Error(`Supabase contract store fetch failed for ${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}: ${err.message}`);
+    const wrapped = new Error(
+      `User contract database is unavailable. Recommendations can still run with the baseline nutrition contract, but nutritionist report upload is temporarily disabled. Detail: Supabase fetch failed for ${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}: ${err.message}`
+    );
+    wrapped.statusCode = 503;
+    wrapped.code = "CONTRACT_STORE_UNAVAILABLE";
+    throw wrapped;
   }
 
   if (!res.ok) {
-    throw new Error(`Supabase contract store error ${res.status}: ${await res.text()}`);
+    const wrapped = new Error(
+      `User contract database returned HTTP ${res.status}. Recommendations can still run with the baseline nutrition contract, but nutritionist report upload is temporarily disabled. Detail: ${await res.text()}`
+    );
+    wrapped.statusCode = res.status >= 500 ? 503 : 502;
+    wrapped.code = "CONTRACT_STORE_ERROR";
+    throw wrapped;
   }
   return res.status === 204 ? null : res.json();
 }

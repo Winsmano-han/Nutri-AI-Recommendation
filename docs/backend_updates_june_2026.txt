@@ -1,0 +1,96 @@
+Nutrifence Backend Updates - June 2026
+=====================================
+
+1. Nigerian recommendation model update
+---------------------------------------
+- Replaced the old Nigerian dish recommender artifact with a new weighted v3 model:
+  best_models_bundle/models/recommender_nigeria_dishes_v3_weighted.joblib
+- Added a richer Nigerian food dataset:
+  data/final/nigeria_dish_features_v2.csv
+- Added the dataset generator:
+  scripts/generate_nigeria_dish_dataset_v2.py
+- The new model uses dish text plus structured features:
+  energy, protein, fat, carbs, fibre, sugar, sodium, health_label, food_class, region, spice_level, and price_range.
+- The previous issue where the model returned U-gba for many unrelated queries was fixed.
+- The deployed model server now loads both dish and food models successfully.
+
+2. Restaurant recommendation behavior
+-------------------------------------
+- Added brand/type realism guidance for common fast-food and pizza/shawarma venues.
+- For users with no health filters, the LLM is no longer instructed to treat pizza, shawarma, rice, or swallow dishes as automatic avoid items.
+- The system now recommends moderated options such as vegetable pizza, chicken shawarma with extra vegetables/light sauce, grilled chicken, or smaller portions when appropriate.
+- Implausible fast-food model candidates such as swallow/soup combos are filtered before the LLM sees them for fast-food and pizza/shawarma venues.
+
+3. Multi-user request handling
+------------------------------
+- The API now queues recommendation requests instead of failing when another user is already running the pipeline.
+- /health exposes queue state:
+  pipelineQueue.active, pipelineQueue.waiting, pipelineQueue.maxWaiting
+- /api/recommendations responses include queue timing in _meta.queue.
+- Mobile apps should use a loading state and avoid retry-spamming while a recommendation request is pending.
+
+4. Supabase contract storage
+----------------------------
+- User nutritionist contracts are stored in Supabase table:
+  user_contracts
+- /api/recommendations now degrades gracefully if Supabase contract lookup fails.
+- If Supabase is unavailable, recommendations still run using the baseline nutrition contract, such as Nigerian FBDG or Canada's Food Guide.
+- /api/ingest-report still requires Supabase because it must save the uploaded/parsed nutritionist report contract.
+
+5. Supabase paused/unavailable behavior
+---------------------------------------
+- If Supabase is paused or unreachable:
+  /api/recommendations should continue working with baseline guidance.
+  /api/ingest-report returns HTTP 503 with a clear message that report upload is temporarily disabled.
+- The backend no longer returns only a vague "fetch failed" message for contract database failures.
+- The error now states that the user contract database is unavailable and explains that recommendations can still run with baseline guidance.
+
+6. Fetch diagnostics and Render hardening
+-----------------------------------------
+- Added IPv4-first DNS handling in Node to reduce Render/Node outbound fetch failures.
+- Added contextual fetch errors for Google Places, Groq, Supabase, model server, and PDF extraction.
+- /health now includes non-secret configuration flags:
+  externalConfig.googleMapsConfigured
+  externalConfig.groqConfigured
+  externalConfig.modelApiUrl
+  externalConfig.supabaseConfigured
+- This helps diagnose missing Render environment variables without exposing keys.
+
+7. Canada support
+-----------------
+- Canada mode is active with country="CA".
+- Canada uses Health Canada / Canada's Food Guide contract and AI fallback guidance.
+- A trained Canadian model has not been added yet, so modelRecommendations will usually be empty for Canada.
+- Response metadata shows:
+  country: CA
+  modelFamily: canada_fallback_ai
+  contractSource: Health Canada - Canada's Food Guide
+
+8. Current endpoint behavior
+----------------------------
+- GET /health
+  Checks Node API, queue state, and non-secret external config flags.
+
+- GET /model/health
+  Checks Python model server and loaded model paths.
+
+- POST /api/recommendations
+  Finds nearby restaurants, classifies them, runs model/AI advice, and returns venue-linked recommendations.
+  Continues working even if Supabase contract lookup is temporarily unavailable.
+
+- POST /api/ingest-report
+  Parses a nutritionist report and stores the resulting contract by userId.
+  Requires Supabase to be reachable; returns HTTP 503 if Supabase is paused/unavailable.
+
+9. Mobile implementation note
+-----------------------------
+- Always send a stable userId.
+- For recommendations, parse response.venues[] and use recommendations[venue.id].
+- Show safeOrders, avoid, tip, confidence, and confidenceNote.
+- If a dish starts with "Ask if available:", show that wording because the backend has not verified the restaurant's real menu.
+- Use a longer timeout for /api/recommendations because the backend may queue requests and call Google/Groq/model services.
+
+10. Known limitation
+--------------------
+- The backend still does not verify real restaurant menus unless a menu enrichment layer is added later.
+- Current recommendations are based on nearby restaurants, restaurant archetype, trained food model candidates, nutrition contract, and LLM reasoning.
