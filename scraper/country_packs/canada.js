@@ -16,8 +16,8 @@ const archetypes = {
 
 const archetypeSeeds = {
   canadian_fast_food:    ["grilled chicken sandwich", "side salad", "apple slices", "burger", "fries", "sugary drink"],
-  coffee_bakery:         ["oatmeal", "egg breakfast sandwich", "whole grain toast", "black coffee", "muffin", "donut", "sweetened latte"],
-  casual_dining:         ["grilled salmon", "chicken salad", "vegetable soup", "steak with vegetables", "poutine", "fried wings"],
+  coffee_bakery:         ["hot oats", "egg breakfast sandwich", "whole grain toast", "black coffee", "muffin", "donut", "sweetened latte"],
+  casual_dining:         ["baked salmon", "chicken salad", "vegetable soup", "steak with vegetables", "poutine", "fried wings"],
   pizza_canada:          ["thin crust vegetable pizza", "grilled chicken pizza", "garden salad", "pepperoni pizza", "cheesy bread"],
   burger_grill_canada:   ["grilled chicken sandwich", "lettuce wrap burger", "side salad", "beef burger", "fries", "milkshake"],
   asian_canadian:        ["steamed rice vegetables", "stir fried vegetables", "grilled teriyaki chicken", "fried rice", "sweet sour chicken"],
@@ -25,8 +25,8 @@ const archetypeSeeds = {
   indian_canada:         ["tandoori chicken", "dal", "chana masala", "vegetable curry", "naan", "butter chicken"],
   caribbean_canada:      ["jerk chicken", "rice and peas", "vegetable stew", "curry goat", "fried plantain", "patty"],
   healthy_bowl_salad:    ["grain bowl", "salad with grilled chicken", "lentil bowl", "vegetable soup", "smoothie", "sweetened juice"],
-  seafood_canada:        ["grilled salmon", "baked cod", "shrimp salad", "fish and chips", "clam chowder"],
-  breakfast_brunch:      ["oatmeal", "egg omelette vegetables", "whole grain toast", "fruit bowl", "pancakes syrup", "bacon"],
+  seafood_canada:        ["baked salmon", "baked cod", "shrimp salad", "fish and chips", "clam chowder"],
+  breakfast_brunch:      ["hot oats", "egg omelette vegetables", "whole grain toast", "fruit bowl", "pancakes syrup", "bacon"],
   unknown_canada:        ["grilled chicken", "vegetable salad", "whole grain sandwich", "vegetable soup", "fries", "sugary drink"],
 };
 
@@ -55,7 +55,7 @@ export default {
   countryLabel: "Canadian",
   contractFile: "nutrition_contract_canada.json",
   baselineName: "Canada's Food Guide",
-  modelMode: "canada_fallback_ai",
+  modelMode: "canada_cnf_2026_model",
   unknownArchetype: "unknown_canada",
   archetypes,
   archetypeSeeds,

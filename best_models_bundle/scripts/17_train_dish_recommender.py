@@ -16,7 +16,7 @@ log = logging.getLogger("train_dish_recommender")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Train a Nigeria dish recommender (dish catalog similarity).")
+    parser = argparse.ArgumentParser(description="Train a dish recommender (dish catalog similarity).")
     parser.add_argument(
         "--input",
         type=str,
@@ -27,6 +27,7 @@ def main() -> int:
         ),
     )
     parser.add_argument("--out", type=str, default="models/recommender_nigeria_dishes.joblib", help="Output path.")
+    parser.add_argument("--country", type=str, default="Nigeria", help="Country label stored in the model artifact.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -50,7 +51,7 @@ def main() -> int:
             df[c] = df[c].fillna("").astype(str).str.strip()
     df = df[df.get("dish_name", "").astype(str).str.len() > 0].drop_duplicates(subset=["dish_name"])
 
-    artifact = train_dish_recommender(df, country="Nigeria")
+    artifact = train_dish_recommender(df, country=args.country)
     out_path = Path(args.out)
     if not out_path.is_absolute():
         out_path = root / out_path

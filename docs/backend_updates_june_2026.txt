@@ -31,11 +31,11 @@ Nutrifence Backend Updates - June 2026
 
 4. Supabase contract storage
 ----------------------------
-- User nutritionist contracts are stored in Supabase table:
+- User doctor/nutritionist contracts are stored in Supabase table:
   user_contracts
 - /api/recommendations now degrades gracefully if Supabase contract lookup fails.
 - If Supabase is unavailable, recommendations still run using the baseline nutrition contract, such as Nigerian FBDG or Canada's Food Guide.
-- /api/ingest-report still requires Supabase because it must save the uploaded/parsed nutritionist report contract.
+- /api/ingest-report still requires Supabase because it must save the uploaded/parsed doctor/nutritionist report contract.
 
 5. Supabase paused/unavailable behavior
 ---------------------------------------
@@ -79,7 +79,7 @@ Nutrifence Backend Updates - June 2026
   Continues working even if Supabase contract lookup is temporarily unavailable.
 
 - POST /api/ingest-report
-  Parses a nutritionist report and stores the resulting contract by userId.
+  Parses a doctor/nutritionist report and stores the resulting contract by userId.
   Requires Supabase to be reachable; returns HTTP 503 if Supabase is paused/unavailable.
 
 9. Mobile implementation note
@@ -94,3 +94,31 @@ Nutrifence Backend Updates - June 2026
 --------------------
 - The backend still does not verify real restaurant menus unless a menu enrichment layer is added later.
 - Current recommendations are based on nearby restaurants, restaurant archetype, trained food model candidates, nutrition contract, and LLM reasoning.
+
+11. Supervisor-request backend updates
+--------------------------------------
+- Allergy input has been simplified for mobile: the backend now accepts allergies as either an array or a comma-separated string.
+- Allergies are normalized into userProfile.allergies and injected into the nutrition prompt as hard exclusions.
+- /api/recommendations also normalizes comma-separated conditions and restrictions, so mobile can send simple strings when needed.
+- Venue objects now expose:
+  hasOnlineMenu
+  onlineMenuUrl
+  menuEnrichment.onlineMenuUrl
+- These fields allow the mobile app to show available online menu/website links after map display when Google Places returns a website.
+- Confidence now includes user-facing guidance labels:
+  High guidance
+  Medium guidance
+  Estimated guidance
+- Medium guidance means the backend has usable evidence but is missing one signal, usually verified menu availability or strong model support.
+- Estimated guidance means the backend is relying mostly on restaurant archetype and food-guide reasoning, so the app should present it as estimated/ask-if-available guidance.
+- User-facing wording has been updated from nutritionist-only report wording to doctor/nutritionist report wording.
+
+12. Supervisor items owned mostly by mobile/reporting
+-----------------------------------------------------
+- Remove Non-Binary from gender choices in the app UI if the project requirement is binary-only gender collection.
+- Fix profile data being cleared in the health-plan session.
+- Add geofencing, dwell detection, and notification triggering in the mobile app.
+- Update conceptual framework diagrams in the written report.
+- Move tools-used descriptions into work-done sections with in-depth explanations.
+- Add evaluation metrics before the chapter 3 summary.
+- Add scientific justification for age grouping in the report if age bands are used in the app or methodology.

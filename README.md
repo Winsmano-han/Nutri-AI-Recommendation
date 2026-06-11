@@ -4,7 +4,7 @@ Production-oriented Nigerian restaurant recommendation pipeline with:
 - Google Places venue discovery
 - Local ML model serving (`.joblib`) for dish ranking
 - Groq-based clinical filtering and explanation
-- Contract-driven nutrition rules (FBDG + uploaded nutritionist plans)
+- Contract-driven nutrition rules (FBDG + uploaded doctor/nutritionist plans)
 
 ## What This Project Does
 
@@ -30,7 +30,7 @@ Given a user location and profile:
   - `model_server.py` (FastAPI server for model inference + PDF extraction)
   - `nutrifence_pipeline.js` (main recommendation pipeline)
   - `nutrition_contract.json` (nutrition policy contract definitions)
-  - `report_ingestion.js` (nutritionist report -> active contract)
+  - `report_ingestion.js` (doctor/nutritionist report -> active contract)
   - `run_ab_test.js` (paced 4-profile condition A/B test runner)
 
 ---
@@ -150,7 +150,8 @@ npm start
   "maxRestaurants": 5,
   "userProfile": {
     "conditions": ["diabetes"],
-    "restrictions": ["low sugar"]
+    "restrictions": ["low sugar"],
+    "allergies": "peanuts, shellfish"
   }
 }
 ```
@@ -166,7 +167,8 @@ Canada is also supported with the same endpoint:
   "maxRestaurants": 5,
   "userProfile": {
     "conditions": ["diabetes"],
-    "restrictions": ["low sugar"]
+    "restrictions": ["low sugar"],
+    "allergies": []
   }
 }
 ```
@@ -176,7 +178,7 @@ Country behavior:
 - `country: "CA"` uses the Health Canada / Canada's Food Guide contract and Canadian restaurant archetypes.
 - If `country` is omitted, the pipeline infers `CA` or `NG` from the coordinates where possible.
 - Canadian model inference is currently skipped unless `CANADA_MODEL_ENABLED=1`; this keeps the Nigerian model from producing misleading Canadian recommendations until a Canadian model is trained.
-- If `userId` is supplied, the pipeline loads only that user's nutritionist contract.
+- If `userId` is supplied, the pipeline loads only that user's doctor/nutritionist contract.
 - The response includes `_meta.apiVersion`, `_meta.contractSource`, `_meta.modelFamily`, `_meta.cache`, and per-venue `confidence`.
 
 `POST /api/ingest-report` supports:
@@ -215,7 +217,7 @@ Contract source file:
 Active behavior:
 1. DEFAULT FBDG contract is always active.
 2. User conditions map to condition tables (e.g., diabetes/hypertension).
-3. If `user_contract_active.json` exists, user nutritionist rules are layered on top.
+3. If a user-specific contract exists in Supabase or local development storage, doctor/nutritionist rules are layered on top.
 
 Implemented condition tables today:
 - `cardiovascular_hypertension`
@@ -224,7 +226,7 @@ Implemented condition tables today:
 
 ---
 
-## Ingest a Nutritionist Report
+## Ingest a Doctor/Nutritionist Report
 
 Convert user PDF/TXT into active user contract:
 
@@ -272,10 +274,10 @@ Implemented API wrapper endpoints (Node):
 - `POST /recommend`, `/recommend/batch`, `/recommend/food`, `/extract-pdf` (model endpoints proxied through Node)
 
 Per-user nutrition contracts:
-- `POST /api/ingest-report` saves the parsed nutritionist contract by `userId`.
+- `POST /api/ingest-report` saves the parsed doctor/nutritionist contract by `userId`.
 - `POST /api/recommendations` should send the same `userId` to load that user's contract.
-- By default contracts are stored in local JSON files under `scraper/user_contracts/` for development.
-- For a free hosted database, create a Supabase project, run `supabase_user_contracts.sql`, and set:
+- Local development can store contracts in JSON files under `scraper/user_contracts/` when Supabase is not configured.
+- For hosted use, create a Supabase project, run `supabase_user_contracts.sql`, and set:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
@@ -296,13 +298,13 @@ Minimal request contract for upstream API layer:
   "radius": 1500,
   "userProfile": {
     "conditions": ["diabetes"],
-    "restrictions": ["low sugar"]
+    "restrictions": ["low sugar"],
+    "allergies": "peanuts, shellfish"
   }
 }
 ```
 
-Future production upgrade:
-- resolve `userId` -> fetch user-specific active contract from DB instead of local file.
+Allergy input can be either an array or a comma-separated string. The backend normalizes it and treats allergies as hard exclusions.
 
 ---
 
@@ -311,3 +313,5 @@ Future production upgrade:
 - If model server is down, pipeline degrades to Groq-only recommendations.
 - If Groq returns `429`, retry/backoff is built into pipeline Groq calls.
 - For stable outputs in tests, keep `MAX_RESTAURANTS` small and use fixed location/radius.
+
+

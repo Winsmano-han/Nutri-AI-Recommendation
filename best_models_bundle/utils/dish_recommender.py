@@ -221,7 +221,7 @@ def recommend_dishes(
             pairs = list(zip(idxs, sims))
             if region_mask is not None:
                 pairs = [(i, s) for (i, s) in pairs if bool(region_mask.iat[i])]
-            pairs = [(i, s) for (i, s) in pairs if s > 0.15]
+            pairs = [(i, s) for (i, s) in pairs if s > 0.08]
             pairs = pairs[:top_k]
             if not pairs:
                 return df.iloc[[]].copy()
@@ -267,7 +267,7 @@ def _apply_condition_filter(recs: pd.DataFrame, condition: Optional[str]) -> pd.
         ing_l = _col_series("main_ingredients") + " " + _col_series("recipe_ingredients")
         text_l = name_l + " " + ing_l
         bad_kw = text_l.str.contains(
-            r"\bsweet\b|\bsugar\b|\bcaramel\w*\b|\bsoda\b|\bsoft drink\b|\bjuice\b|\bsyrup\b|\bhoney\b|\bfried\b|\bfries\b|\bchips\b|\bburger\b|\bpizza\b",
+            r"\bsweet\b|\bsugar\b|\bcaramel\w*\b|\bsoda\b|\bsoft drink\b|\bjuice\b|\bsyrup\b|\bhoney\b|\bcookie\b|\bcake\b|\bcandy\b|\bchocolate\b|\bdessert\b|\bdonut\b|\bdoughnut\b|\bfried\b|\bfries\b|\bchips\b|\bburger\b|\bpizza\b",
             regex=True,
             na=False,
         )

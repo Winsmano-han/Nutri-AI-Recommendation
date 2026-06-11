@@ -17,7 +17,7 @@ This backend fills that gap by:
 - Classifying each restaurant into a Nigerian food archetype.
 - Calling local Nutrifence joblib models for ranked Nigerian dish candidates.
 - Applying the Nigerian Food-Based Dietary Guidelines nutrition contract.
-- Applying user-specific nutritionist report rules when available.
+- Applying user-specific doctor/nutritionist report rules when available.
 - Returning structured recommendation cards for Flutter.
 
 The mobile app should treat this backend as the source of truth for restaurant recommendations. It should not call Groq, Google Places, or the Python model server directly.
@@ -82,7 +82,8 @@ Example request:
   "maxRestaurants": 5,
   "userProfile": {
     "conditions": ["diabetes", "hypertension"],
-    "restrictions": ["low sodium", "low sugar"]
+    "restrictions": ["low sodium", "low sugar"],
+    "allergies": "peanuts, shellfish"
   }
 }
 ```
@@ -91,7 +92,7 @@ Request fields:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `userId` | Strongly recommended | Firebase UID. Backend uses it to load that user's nutritionist contract. |
+| `userId` | Strongly recommended | Firebase UID. Backend uses it to load that user's doctor/nutritionist contract. |
 | `lat` | Yes | User latitude from Geolocator. Must be a number. |
 | `lng` | Yes | User longitude from Geolocator. Must be a number. |
 | `country` | No | `NG` for Nigeria or `CA` for Canada. If omitted, backend infers from coordinates when possible. |
@@ -99,6 +100,7 @@ Request fields:
 | `maxRestaurants` | No | Limits restaurants returned. Use low values during demos to reduce latency. |
 | `userProfile.conditions` | No | Normalized condition labels, for example `diabetes`, `hypertension`, `weight_loss`. |
 | `userProfile.restrictions` | No | Practical restrictions, for example `low sodium`, `low sugar`, `no fried food`. |
+| `userProfile.allergies` | No | Allergies as either an array or comma-separated string, for example `peanuts, shellfish`. Backend treats these as hard exclusions. |
 
 Canada example:
 
@@ -183,13 +185,17 @@ Important response rules:
 - `venues[].id` is the Google Places ID and is the key into `recommendations`.
 - `recommendations[venueId].safeOrders` is what the UI should show as recommended orders.
 - `recommendations[venueId].avoid` is what the UI should show as avoid/warning items.
-- `tip` is a practical Nigerian ordering instruction.
+- `tip` is a practical country-specific ordering instruction.
 - `confidenceNote` is populated when the venue type is uncertain. Display it as a small caution note, not as an error.
+- `venues[].hasOnlineMenu` and `venues[].onlineMenuUrl` tell the app whether Google Places returned an official website/menu-like URL to show after the map display.
+- `recommendations[venueId].confidence.display` returns `High guidance`, `Medium guidance`, or `Estimated guidance`.
+- `Medium guidance` means the recommendation is usable but one signal is limited, usually no verified menu or partial model support.
+- `Estimated guidance` means the backend is relying mostly on restaurant type and food-guide reasoning, so the UI should show it as “ask if available” style advice.
 - `modelRecommendations` is useful for debug/advanced UI, but the main user-facing cards should use `safeOrders`, `avoid`, and `tip`.
 
-## Endpoint 2: Nutrition Report Ingestion
+## Endpoint 2: Doctor/Nutritionist Report Ingestion
 
-Use this endpoint after the user submits or updates a nutritionist report.
+Use this endpoint after the user submits or updates a doctor/nutritionist report.
 
 ```http
 POST /api/ingest-report
@@ -528,7 +534,7 @@ Recommendation test:
 Invoke-RestMethod -Method Post `
   -Uri http://127.0.0.1:8090/api/recommendations `
   -ContentType "application/json" `
-  -Body '{"lat":7.3622,"lng":3.8503,"radius":1500,"maxRestaurants":1,"userProfile":{"conditions":["diabetes"],"restrictions":["low sugar"]}}'
+  -Body '{"lat":7.3622,"lng":3.8503,"radius":1500,"maxRestaurants":1,"userProfile":{"conditions":["diabetes"],"restrictions":["low sugar"],"allergies":"peanuts, shellfish"}}'
 ```
 
 Report ingestion test:

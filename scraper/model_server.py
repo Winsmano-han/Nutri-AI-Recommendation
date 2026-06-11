@@ -57,6 +57,10 @@ DISH_MODEL_PATH = os.getenv(
     "DISH_MODEL_PATH",
     os.path.join(BUNDLE_ROOT, "models", "recommender_nigeria_dishes_v3_weighted.joblib")
 )
+CANADA_DISH_MODEL_PATH = os.getenv(
+    "CANADA_DISH_MODEL_PATH",
+    os.path.join(BUNDLE_ROOT, "models", "recommender_canada_dishes_cnf_2026.joblib")
+)
 FOOD_MODEL_PATH = os.getenv(
     "FOOD_MODEL_PATH",
     os.path.join(BUNDLE_ROOT, "models", "recommender_nigeria.joblib")
@@ -72,12 +76,13 @@ def load_models():
     loaded = []
 
     if os.path.exists(DISH_MODEL_PATH):
-        log.info(f"Loading dish model from {DISH_MODEL_PATH}…")
-        models["dish"] = joblib.load(DISH_MODEL_PATH)
-        loaded.append("dish_model")
-        log.info("  ✅ Dish model loaded")
+        log.info(f"Loading Nigeria dish model from {DISH_MODEL_PATH}…")
+        models["dish_ng"] = joblib.load(DISH_MODEL_PATH)
+        models["dish"] = models["dish_ng"]  # backwards-compatible default
+        loaded.append("dish_model_ng")
+        log.info("  ✅ Nigeria dish model loaded")
         try:
-            dish_df = getattr(models["dish"], "dish_df", None)
+            dish_df = getattr(models["dish_ng"], "dish_df", None)
             if dish_df is not None and hasattr(dish_df, "columns"):
                 sample_cols = list(dish_df.columns)
                 wanted = ["dish_name", "health_label", "region", "food_class", "spice_level", "price_range"]
@@ -88,6 +93,20 @@ def load_models():
     else:
         log.warning(f"  ⚠️  Dish model not found at {DISH_MODEL_PATH} — /recommend will return []")
 
+    if os.path.exists(CANADA_DISH_MODEL_PATH):
+        log.info(f"Loading Canada dish model from {CANADA_DISH_MODEL_PATH}…")
+        models["dish_ca"] = joblib.load(CANADA_DISH_MODEL_PATH)
+        loaded.append("dish_model_ca")
+        log.info("  ✅ Canada dish model loaded")
+        try:
+            dish_df = getattr(models["dish_ca"], "dish_df", None)
+            if dish_df is not None and hasattr(dish_df, "columns"):
+                log.info(f"  ℹ️ Canada dish artifact rows: {len(dish_df)}")
+        except Exception as e:
+            log.warning(f"  ⚠️ Could not inspect Canada dish artifact: {e}")
+    else:
+        log.warning(f"  ⚠️  Canada dish model not found at {CANADA_DISH_MODEL_PATH} — country=CA will fall back if possible")
+
     if os.path.exists(FOOD_MODEL_PATH):
         log.info(f"Loading food model from {FOOD_MODEL_PATH}…")
         models["food"] = joblib.load(FOOD_MODEL_PATH)
@@ -97,6 +116,24 @@ def load_models():
         log.warning(f"  ⚠️  Food model not found at {FOOD_MODEL_PATH} — /recommend/food will return []")
 
     return loaded
+
+
+def _normalise_country(country: Optional[str]) -> str:
+    c = str(country or "NG").strip().upper()
+    if c in {"CA", "CAN", "CANADA"}:
+        return "CA"
+    return "NG"
+
+
+def _get_dish_model(country: Optional[str]):
+    code = _normalise_country(country)
+    if code == "CA" and "dish_ca" in models:
+        return models["dish_ca"], "CA"
+    if "dish_ng" in models:
+        return models["dish_ng"], "NG"
+    if "dish" in models:
+        return models["dish"], "NG"
+    return None, code
 
 
 @asynccontextmanager
@@ -135,6 +172,7 @@ class DishRecommendRequest(BaseModel):
     top_k: int                    = Field(8, ge=1, le=30, description="Number of recommendations")
     condition: Optional[str]      = Field(None, description="'diabetes' or 'hypertension'")
     region: Optional[str]         = Field(None, description="Optional region filter e.g. 'South-West'")
+    country: Optional[str]        = Field(None, description="'NG' or 'CA'. Defaults to NG.")
 
 
 class FoodRecommendRequest(BaseModel):
@@ -176,6 +214,7 @@ async def health():
         "status": "ok",
         "models_loaded": list(models.keys()),
         "dish_model_path": DISH_MODEL_PATH,
+        "canada_dish_model_path": CANADA_DISH_MODEL_PATH,
         "food_model_path": FOOD_MODEL_PATH,
     }
 
@@ -217,11 +256,10 @@ async def recommend_dishes(req: DishRecommendRequest):
     Accepts free text, dish name, or dish ID as seed.
     Optionally filters by health condition and region.
     """
-    if "dish" not in models:
+    recommender, served_country = _get_dish_model(req.country)
+    if recommender is None:
         log.warning("Dish model not loaded — returning empty recommendations")
         return {"recommendations": [], "warning": "Dish model not loaded"}
-
-    recommender = models["dish"]
 
     # Build kwargs for the recommender's recommend() method
     # The dish recommender (utils/dish_recommender.py) accepts:
@@ -263,7 +301,11 @@ async def recommend_dishes(req: DishRecommendRequest):
     # Normalise results to a consistent list of dicts regardless of model's return format
     items = _normalise_dish_results(raw_results)
 
-    return {"recommendations": items, "seed": req.like_text or req.like_dish_name or req.like_dish_id}
+    return {
+        "recommendations": items,
+        "seed": req.like_text or req.like_dish_name or req.like_dish_id,
+        "country": served_country,
+    }
 
 
 def _normalise_dish_results(raw) -> list[dict]:
@@ -414,6 +456,7 @@ class BatchDishRequest(BaseModel):
     seeds: list[str]  = Field(..., description="List of seed texts to run in one call")
     top_k: int        = Field(6, ge=1, le=20)
     condition: Optional[str] = None
+    country: Optional[str] = Field(None, description="'NG' or 'CA'. Defaults to NG.")
 
 
 @app.post("/recommend/batch", response_model=dict)
@@ -423,10 +466,9 @@ async def recommend_batch(req: BatchDishRequest):
     More efficient than the Node pipeline calling /recommend N times per restaurant.
     Returns a dict keyed by seed text.
     """
-    if "dish" not in models:
+    recommender, served_country = _get_dish_model(req.country)
+    if recommender is None:
         return {"results": {}, "warning": "Dish model not loaded"}
-
-    recommender = models["dish"]
     results = {}
 
     for seed in req.seeds:
@@ -449,7 +491,7 @@ async def recommend_batch(req: BatchDishRequest):
             log.warning(f"Batch seed '{seed}' failed: {e}")
             results[seed] = []
 
-    return {"results": results}
+    return {"results": results, "country": served_country}
 
 
 # ─── Utility helpers ──────────────────────────────────────────────────────────

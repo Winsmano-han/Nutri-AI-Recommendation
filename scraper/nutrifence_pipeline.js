@@ -7,8 +7,7 @@
  *   1. Accepts a user GPS location + health profile
  *   2. Searches Google Places API for restaurants within a configurable radius
  *   3. Classifies each restaurant into one of 10 Nigerian food archetypes
- *   4. Maps each archetype → seed dishes → calls FastAPI model server
- *      (model server runs recommender_nigeria_dishes_extended.joblib)
+ *   4. Generates evidence-based restaurant seed terms → calls FastAPI model server
  *   5. Groq filters and explains recommendations against the user's clinical profile
  *   6. Outputs recommendations_{timestamp}.json — ready for Flutter to consume
  *
@@ -37,6 +36,7 @@ import dns from "dns";
 import { fileURLToPath } from "url";
 import { loadCountryPack, normalizeCountry, inferCountryFromCoordinates } from "./country_packs/index.js";
 import { loadUserContract, contractStoreInfo } from "./contract_store.js";
+import { generateRestaurantSeeds } from "./seed_generator.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dns.setDefaultResultOrder("ipv4first");
@@ -90,6 +90,48 @@ if (process.env.USER_PROFILE) {
     console.warn("⚠️  USER_PROFILE env var is not valid JSON — using empty profile");
   }
 }
+
+function normalizeList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => normalizeList(item))
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeGender(value) {
+  const gender = String(value || "").trim().toLowerCase();
+  if (["male", "m"].includes(gender)) return "male";
+  if (["female", "f"].includes(gender)) return "female";
+  return null;
+}
+
+function normalizeAge(value) {
+  const age = parseInt(value, 10);
+  return Number.isFinite(age) && age > 0 ? age : null;
+}
+
+function normalizeUserProfile(profile = {}) {
+  return {
+    ...profile,
+    conditions: normalizeList(profile.conditions),
+    restrictions: normalizeList(profile.restrictions),
+    allergies: normalizeList(profile.allergies ?? profile.allergens ?? profile.allergensAvoid),
+    age: normalizeAge(profile.age),
+    activityLevel: profile.activityLevel || null,
+    gender: normalizeGender(profile.gender),
+  };
+}
+
+USER_PROFILE = normalizeUserProfile(USER_PROFILE);
 
 const USER_COUNTRY =
   normalizeCountry(process.env.USER_COUNTRY || process.env.COUNTRY || USER_PROFILE.country) ||
@@ -160,6 +202,11 @@ async function loadActiveContract(userProfile) {
 function buildNutritionPromptBlock(contractData, userProfile) {
   const { defaultContract, userContract, activeTables, country } = contractData;
   const restrictions = (userProfile?.restrictions || []).filter(Boolean);
+  const allergies = (userProfile?.allergies || []).filter(Boolean);
+  const age = userProfile?.age;
+  const activityLevel = userProfile?.activityLevel;
+  const gender = userProfile?.gender;
+  
   const baselineLabel =
     country === "CA"
       ? "BASELINE RULES (Health Canada — Canada's Food Guide):"
@@ -187,15 +234,29 @@ function buildNutritionPromptBlock(contractData, userProfile) {
     }
   }
 
+  if (age || activityLevel || gender) {
+    lines.push("");
+    lines.push("USER DEMOGRAPHICS:");
+    if (age) lines.push(`- Age: ${age} years`);
+    if (gender) lines.push(`- Gender: ${gender}`);
+    if (activityLevel) lines.push(`- Activity Level: ${activityLevel}`);
+  }
+
   if (restrictions.length > 0) {
     lines.push("");
     lines.push("USER DIETARY RESTRICTIONS:");
     for (const r of restrictions) lines.push(`- ${r}`);
   }
 
+  if (allergies.length > 0) {
+    lines.push("");
+    lines.push("USER ALLERGIES (hard exclusions):");
+    for (const allergy of allergies) lines.push(`- ${allergy}`);
+  }
+
   if (userContract && Array.isArray(userContract.llmInstructions) && userContract.llmInstructions.length) {
     lines.push("");
-    lines.push(`USER NUTRITIONIST PLAN (${userContract.source || "uploaded report"}):`);
+    lines.push(`USER DOCTOR/NUTRITIONIST PLAN (${userContract.source || "uploaded report"}):`);
     lines.push("These rules override FBDG where they conflict:");
     for (const inst of userContract.llmInstructions) lines.push(`- ${inst}`);
 
@@ -379,14 +440,13 @@ async function resolveArchetype(place) {
 // ─── FastAPI model server bridge ──────────────────────────────────────────────
 
 /**
- * Runs all seed dishes for a given archetype through the model server in one
- * batch call. Returns a deduplicated, similarity-sorted list.
+ * Runs all evidence-based seed terms for a restaurant through the model server
+ * in one batch call. Returns a deduplicated, similarity-sorted list.
  */
-async function getModelRecommendations(archetype, userConditions) {
-  const seeds = ARCHETYPE_SEEDS[archetype] || ARCHETYPE_SEEDS.unknown;
-  if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") {
-    return [];
-  }
+async function getModelRecommendations(seedTerms, userConditions) {
+  const seeds = Array.isArray(seedTerms) && seedTerms.length
+    ? seedTerms
+    : (ARCHETYPE_SEEDS[COUNTRY_PACK.unknownArchetype] || []);
   const modelApiUrl =
     USER_COUNTRY === "CA"
       ? (process.env.CANADA_MODEL_API_URL || MODEL_API_URL).replace(/\/$/, "")
@@ -397,7 +457,7 @@ async function getModelRecommendations(archetype, userConditions) {
     ["diabetes", "hypertension"].includes(c.toLowerCase())
   ) || null;
 
-  const body = { seeds, top_k: 6 };
+  const body = { seeds, top_k: 6, country: USER_COUNTRY };
   if (primaryCondition) body.condition = primaryCondition;
 
   let response;
@@ -438,7 +498,6 @@ async function getModelRecommendations(archetype, userConditions) {
 }
 
 function shouldSkipModelForArchetype(archetype) {
-  if (USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1") return true;
   return false;
 }
 
@@ -576,8 +635,15 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
   const archetypeDesc = ARCHETYPES[archetype];
   const conditions = contractData.normalizedConditions.join(", ") || "none";
   const restrictions = (userProfile?.restrictions || []).join(", ") || "none";
+  const allergies = (userProfile?.allergies || []).join(", ") || "none";
+  const age = userProfile?.age;
+  const activityLevel = userProfile?.activityLevel;
+  const gender = userProfile?.gender;
+  
   const hasActiveHealthFilters =
-    contractData.normalizedConditions.length > 0 || (userProfile?.restrictions || []).length > 0;
+    contractData.normalizedConditions.length > 0 ||
+    (userProfile?.restrictions || []).length > 0 ||
+    (userProfile?.allergies || []).length > 0;
   const countryLabel = USER_COUNTRY === "CA" ? "Canadian" : "Nigerian";
   const contextTip = USER_COUNTRY === "CA"
     ? "Canadian context (e.g. sauces/dressings/gravy on the side, water instead of pop, grilled/baked instead of fried, salad/vegetables instead of fries or poutine)"
@@ -599,6 +665,35 @@ async function explainWithGroq(restaurantName, archetype, modelRecs, userProfile
     .map((r, i) => `${i + 1}. ${r.dish_name} (similarity: ${(r.similarity_score || 0).toFixed(2)}, health_label: ${r.health_label || "unknown"})`)
     .join("\n");
 
+  // Build demographic context
+  let demographicContext = "";
+  if (age || activityLevel || gender) {
+    demographicContext += "\n\nUSER DEMOGRAPHICS:";
+    if (age) {
+      demographicContext += `\n- Age: ${age} years`;
+      if (age < 30) {
+        demographicContext += " (young adult - may need adequate energy if active, but still follow all active health restrictions)";
+      } else if (age >= 30 && age < 50) {
+        demographicContext += " (adult - moderate energy needs, watch portion sizes)";
+      } else if (age >= 50 && age < 65) {
+        demographicContext += " (middle-aged - lower energy needs, prioritize nutrient density, smaller portions)";
+      } else {
+        demographicContext += " (senior - lower energy needs, prioritize easy-to-digest foods, smaller portions, adequate protein to prevent muscle loss)";
+      }
+    }
+    if (gender) demographicContext += `\n- Gender: ${gender}`;
+    if (activityLevel) {
+      demographicContext += `\n- Activity Level: ${activityLevel}`;
+      if (activityLevel.toLowerCase().includes("sedentary") || activityLevel.toLowerCase().includes("low")) {
+        demographicContext += " (minimal activity - reduce portion sizes, limit carbs)";
+      } else if (activityLevel.toLowerCase().includes("moderate")) {
+        demographicContext += " (moderate activity - standard portions acceptable)";
+      } else if (activityLevel.toLowerCase().includes("active") || activityLevel.toLowerCase().includes("high")) {
+        demographicContext += " (highly active - may need adequate energy and protein, while still respecting active health conditions)";
+      }
+    }
+  }
+
   const prompt = `You are a ${countryLabel} clinical nutrition advisor. A user is at a restaurant and needs safe meal guidance.
 
 Restaurant: "${restaurantName}"
@@ -608,6 +703,7 @@ Country context: ${USER_COUNTRY}
 User Profile:
 - Conditions: ${conditions}
 - Restrictions: ${restrictions}
+- Allergies: ${allergies}${demographicContext}
 
 ${nutritionBlock}
 
@@ -621,6 +717,12 @@ TASK:
 2. If a model recommendation violates a restriction (e.g., "low sugar" vs "Caramelized Coconut"), you MUST DISCARD it.
 3. Select 3-5 "safeOrders".
 4. Identify 2-3 "avoid" items.
+
+**CRITICAL: ADJUST RECOMMENDATIONS BASED ON USER DEMOGRAPHICS:**
+${age || activityLevel ? "- Demographics may adjust portion and practical advice, but must never override medical conditions, allergies, restrictions, or doctor/nutritionist instructions." : ""}
+${age && age >= 65 ? `- User is an older adult (${age} years): Prioritize nutrient-dense foods, moderate portions, and adequate protein. Avoid heavy portions when safer alternatives exist.` : ""}
+${age && age < 30 && activityLevel && activityLevel.toLowerCase().includes("active") ? `- User is young and active (${age} years, ${activityLevel}): Prioritize adequate protein and balanced energy, while still respecting all active health restrictions.` : ""}
+${age && age >= 50 && activityLevel && activityLevel.toLowerCase().includes("sedentary") ? `- User is older and sedentary (${age} years, ${activityLevel}): Recommend smaller portions, nutrient-dense foods, limit heavy starches.` : ""}
 
 Return a JSON object:
 {
@@ -636,6 +738,7 @@ Return a JSON object:
 
 CRITICAL RULES:
 - NEVER suggest a dish that violates "USER DIETARY RESTRICTIONS" or "AVOID" lists in the nutrition contract.
+- Allergies are hard exclusions. Never recommend dishes containing listed allergens.
 - If the model list contains high-sugar or fried items and the user is on "weight_loss" or "low sugar", move those items to the "avoid" list instead.
 - Active health filters present: ${hasActiveHealthFilters ? "yes" : "no"}.
 - If active health filters are "no", do NOT behave like a strict therapeutic diet. Recommend balanced, realistic restaurant choices with portion/sauce modifications.
@@ -785,14 +888,39 @@ function buildVenueObject(place, archetype, coords, coordSource) {
     priceLevel:    place.price_level   ?? null,
     openNow:       place.opening_hours?.open_now ?? null,
     website:       place.website       ?? null,
+    hasOnlineMenu: Boolean(place.website),
+    onlineMenuUrl: place.website       ?? null,
     googleMapsUrl: place.url           ?? null,
     menuEnrichment: {
       attempted: false,
+      onlineMenuUrl: place.website ?? null,
       source: place.website ? "website_available" : null,
       note: place.website
         ? "Official website is available for future menu extraction, but menu enrichment is not enabled yet."
         : "No official website returned by Places Details.",
     },
+  };
+}
+
+function confidenceGuidance(overall) {
+  if (overall >= 0.75) {
+    return {
+      label: "high",
+      display: "High guidance",
+      explanation: "Recommendation is strongly supported by venue type, model output, and active nutrition contract.",
+    };
+  }
+  if (overall >= 0.55) {
+    return {
+      label: "medium",
+      display: "Medium guidance",
+      explanation: "Recommendation is usable, but at least one signal is limited, usually no verified menu or only partial model support.",
+    };
+  }
+  return {
+    label: "estimated",
+    display: "Estimated guidance",
+    explanation: "Recommendation is estimated from restaurant type or general food-guide knowledge because menu/model evidence is weak.",
   };
 }
 
@@ -803,9 +931,13 @@ function buildConfidence({ archetype, modelUsed, userContractUsed, menuAvailable
   const modelScore = modelUsed ? 0.85 : 0.45;
   const contractScore = userContractUsed ? 0.95 : 0.75;
   const overall = Number(((venueArchetype * 0.3) + (menuAvailability * 0.2) + (modelScore * 0.25) + (contractScore * 0.25)).toFixed(2));
+  const guidance = confidenceGuidance(overall);
 
   return {
     overall,
+    label: guidance.label,
+    display: guidance.display,
+    explanation: guidance.explanation,
     venueArchetype,
     menuAvailability,
     modelUsed,
@@ -979,14 +1111,25 @@ async function main() {
       const source    = classifyByPattern(details.name, details.types, USER_COUNTRY) ? "pattern" : "groq";
       console.log(`${archetype} (via ${source})`);
 
+      const seedInfo = generateRestaurantSeeds({
+        place: details,
+        archetype,
+        country: USER_COUNTRY,
+        maxTerms: 10,
+      });
+      console.log(
+        `  🌱 Seed evidence… ${seedInfo.seedSource} ` +
+        `(confidence ${seedInfo.seedConfidence.toFixed(2)}, ${seedInfo.seedTerms.length} terms)`
+      );
+
       // Get model recommendations (skip if server is down — flag as low confidence)
       let modelRecs = [];
       if (modelServerUp) {
-        process.stdout.write(`  🤖 Model inference (${ARCHETYPE_SEEDS[archetype].length} seeds)… `);
+        process.stdout.write(`  🤖 Model inference (${seedInfo.seedTerms.length} evidence seeds)… `);
         if (shouldSkipModelForArchetype(archetype)) {
           console.log("skipped for this archetype/model mode");
         } else {
-          modelRecs = await getModelRecommendations(archetype, USER_PROFILE.conditions || []);
+          modelRecs = await getModelRecommendations(seedInfo.seedTerms, USER_PROFILE.conditions || []);
           modelRecs = filterModelRecommendationsForArchetype(archetype, modelRecs);
           console.log(`${modelRecs.length} ranked dishes`);
         }
@@ -1026,6 +1169,17 @@ async function main() {
           userContractUsed: activeContractData.userContractUsed,
           menuAvailable: Boolean(details.website),
         }),
+        seed: {
+          source: seedInfo.seedSource,
+          confidence: seedInfo.seedConfidence,
+          terms: seedInfo.seedTerms,
+          evidence: seedInfo.evidence.map((item) => ({
+            source: item.source,
+            confidence: item.confidence,
+            terms: item.terms,
+            reason: item.reason,
+          })),
+        },
         modelServerUsed:  modelServerUp,
         archetype,
       };
@@ -1055,9 +1209,7 @@ async function main() {
       apiVersion:      "1.1",
       contractSource:  activeContractData.contractSource,
       contractStore:   contractStoreInfo(),
-      modelFamily:     USER_COUNTRY === "CA" && process.env.CANADA_MODEL_ENABLED !== "1"
-        ? "canada_fallback_ai"
-        : COUNTRY_PACK.modelMode,
+      modelFamily:     USER_COUNTRY === "CA" ? "canada_cnf_2026_model" : COUNTRY_PACK.modelMode,
       userId:          USER_ID || null,
       userLocation:    { lat: USER_LAT, lng: USER_LNG, radiusMetres: SEARCH_RADIUS },
       userProfile:     USER_PROFILE,

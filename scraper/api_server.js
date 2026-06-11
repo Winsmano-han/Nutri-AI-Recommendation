@@ -127,6 +127,48 @@ const responseCache = new Map();
 const pipelineQueue = [];
 let pipelineActive = false;
 
+function normalizeList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => normalizeList(item))
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeGender(value) {
+  const gender = String(value || "").trim().toLowerCase();
+  if (["male", "m"].includes(gender)) return "male";
+  if (["female", "f"].includes(gender)) return "female";
+  return null;
+}
+
+function normalizeAge(value) {
+  const age = parseInt(value, 10);
+  return Number.isFinite(age) && age > 0 ? age : null;
+}
+
+function normalizeUserProfile(profile = {}) {
+  const normalized = {
+    ...profile,
+    conditions: normalizeList(profile.conditions),
+    restrictions: normalizeList(profile.restrictions),
+    allergies: normalizeList(profile.allergies ?? profile.allergens ?? profile.allergensAvoid),
+    age: normalizeAge(profile.age),
+    activityLevel: profile.activityLevel || null,
+    gender: normalizeGender(profile.gender),
+  };
+
+  return normalized;
+}
+
 function recommendationCacheKey(payload) {
   const stable = {
     country: payload.country || "auto",
@@ -135,7 +177,7 @@ function recommendationCacheKey(payload) {
     radius: Number(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
     maxRestaurants: Number(payload.maxRestaurants ?? process.env.MAX_RESTAURANTS ?? "15"),
     userId: payload.userId || null,
-    userProfile: payload.userProfile || { conditions: [], restrictions: [] },
+    userProfile: normalizeUserProfile(payload.userProfile || { conditions: [], restrictions: [] }),
   };
   return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }
@@ -167,7 +209,7 @@ async function runPipeline(payload) {
     USER_LAT: String(payload.lat),
     USER_LNG: String(payload.lng),
     SEARCH_RADIUS: String(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
-    USER_PROFILE: JSON.stringify(payload.userProfile || { conditions: [], restrictions: [] }),
+    USER_PROFILE: JSON.stringify(normalizeUserProfile(payload.userProfile || { conditions: [], restrictions: [] })),
   };
   if (payload.country != null) env.USER_COUNTRY = String(payload.country);
   if (payload.userId != null) env.USER_ID = String(payload.userId);
@@ -297,7 +339,7 @@ const server = http.createServer(async (req, res) => {
         radius: body.radius,
         country: body.country,
         userId: body.userId,
-        userProfile: body.userProfile || { conditions: [], restrictions: [] },
+        userProfile: normalizeUserProfile(body.userProfile || { conditions: [], restrictions: [] }),
         maxRestaurants: body.maxRestaurants,
       };
       const cacheKey = recommendationCacheKey(payload);

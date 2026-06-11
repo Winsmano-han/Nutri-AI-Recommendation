@@ -36,7 +36,7 @@ async function supabaseRequest(pathname, options = {}) {
     });
   } catch (err) {
     const wrapped = new Error(
-      `User contract database is unavailable. Recommendations can still run with the baseline nutrition contract, but nutritionist report upload is temporarily disabled. Detail: Supabase fetch failed for ${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}: ${err.message}`
+      `User contract database is unavailable. Recommendations can still run with the baseline nutrition contract, but doctor/nutritionist report upload is temporarily disabled. Detail: Supabase fetch failed for ${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}: ${err.message}`
     );
     wrapped.statusCode = 503;
     wrapped.code = "CONTRACT_STORE_UNAVAILABLE";
@@ -45,7 +45,7 @@ async function supabaseRequest(pathname, options = {}) {
 
   if (!res.ok) {
     const wrapped = new Error(
-      `User contract database returned HTTP ${res.status}. Recommendations can still run with the baseline nutrition contract, but nutritionist report upload is temporarily disabled. Detail: ${await res.text()}`
+      `User contract database returned HTTP ${res.status}. Recommendations can still run with the baseline nutrition contract, but doctor/nutritionist report upload is temporarily disabled. Detail: ${await res.text()}`
     );
     wrapped.statusCode = res.status >= 500 ? 503 : 502;
     wrapped.code = "CONTRACT_STORE_ERROR";
