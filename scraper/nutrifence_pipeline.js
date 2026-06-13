@@ -23,7 +23,7 @@
  *   USER_LAT              — user latitude         (default: Ibadan center)
  *   USER_LNG              — user longitude        (default: Ibadan center)
  *   SEARCH_RADIUS         — metres                (default: 2000)
- *   MAX_RESTAURANTS       — cap on venues         (default: 15)
+ *   MAX_RESTAURANTS       — cap on venues         (default: 3)
  *   USER_PROFILE          — JSON string of user health profile (see below)
  *
  * USER_PROFILE example:
@@ -79,7 +79,7 @@ const MODEL_TIMEOUT_MS = parseInt(process.env.MODEL_TIMEOUT_MS || "20000", 10);
 const USER_LAT      = parseFloat(process.env.USER_LAT  || "7.3775");
 const USER_LNG      = parseFloat(process.env.USER_LNG  || "3.9470");
 const SEARCH_RADIUS = parseInt(process.env.SEARCH_RADIUS || "2000", 10);
-const MAX_RESTAURANTS = parseInt(process.env.MAX_RESTAURANTS || "15", 10);
+const MAX_RESTAURANTS = parseInt(process.env.MAX_RESTAURANTS || "3", 10);
 
 // Parse user health profile from env or use empty defaults
 let USER_PROFILE = { conditions: [], restrictions: [] };
@@ -425,7 +425,9 @@ async function resolveArchetype(place) {
 
   const archetype = patternResult
     ? patternResult
-    : await classifyWithGroq(
+    : (process.env.SKIP_GROQ_CLASSIFY === "1")
+      ? fallbackKey
+      : await classifyWithGroq(
         place.name,
         place.formatted_address,
         place.types,

@@ -39,6 +39,9 @@ const PORT = parseInt(process.env.API_PORT || "8090", 10);
 const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8011").replace(/\/$/, "");
 const CACHE_TTL_MS = parseInt(process.env.RECOMMENDATION_CACHE_TTL_MS || "3600000", 10);
 const MAX_PIPELINE_QUEUE = parseInt(process.env.MAX_PIPELINE_QUEUE || "20", 10);
+const DEFAULT_MAX_RESTAURANTS = parseInt(process.env.DEFAULT_MAX_RESTAURANTS || "3", 10);
+const HARD_MAX_RESTAURANTS = parseInt(process.env.HARD_MAX_RESTAURANTS || "5", 10);
+const GEO_CACHE_DECIMALS = parseInt(process.env.GEO_CACHE_DECIMALS || "2", 10);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -172,14 +175,20 @@ function normalizeUserProfile(profile = {}) {
 function recommendationCacheKey(payload) {
   const stable = {
     country: payload.country || "auto",
-    lat: Number(payload.lat).toFixed(3),
-    lng: Number(payload.lng).toFixed(3),
+    lat: Number(payload.lat).toFixed(GEO_CACHE_DECIMALS),
+    lng: Number(payload.lng).toFixed(GEO_CACHE_DECIMALS),
     radius: Number(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
-    maxRestaurants: Number(payload.maxRestaurants ?? process.env.MAX_RESTAURANTS ?? "15"),
+    maxRestaurants: normaliseMaxRestaurants(payload.maxRestaurants),
     userId: payload.userId || null,
     userProfile: normalizeUserProfile(payload.userProfile || { conditions: [], restrictions: [] }),
   };
   return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+function normaliseMaxRestaurants(value) {
+  const requested = parseInt(value ?? process.env.MAX_RESTAURANTS ?? DEFAULT_MAX_RESTAURANTS, 10);
+  const safe = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_MAX_RESTAURANTS;
+  return Math.min(safe, HARD_MAX_RESTAURANTS);
 }
 
 function getCachedRecommendation(key) {
@@ -213,7 +222,8 @@ async function runPipeline(payload) {
   };
   if (payload.country != null) env.USER_COUNTRY = String(payload.country);
   if (payload.userId != null) env.USER_ID = String(payload.userId);
-  if (payload.maxRestaurants != null) env.MAX_RESTAURANTS = String(payload.maxRestaurants);
+  env.MAX_RESTAURANTS = String(normaliseMaxRestaurants(payload.maxRestaurants));
+  env.SKIP_GROQ_CLASSIFY = String(payload.skipGroqClassify ?? process.env.SKIP_GROQ_CLASSIFY ?? "1");
 
   try {
     await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
@@ -311,6 +321,13 @@ const server = http.createServer(async (req, res) => {
         },
         contractStore: contractStoreInfo(),
         pipelineQueue: pipelineQueueStatus(),
+        performance: {
+          defaultMaxRestaurants: DEFAULT_MAX_RESTAURANTS,
+          hardMaxRestaurants: HARD_MAX_RESTAURANTS,
+          geoCacheDecimals: GEO_CACHE_DECIMALS,
+          cacheTtlMs: CACHE_TTL_MS,
+          skipGroqClassifyDefault: process.env.SKIP_GROQ_CLASSIFY ?? "1",
+        },
       });
     }
 
@@ -340,7 +357,8 @@ const server = http.createServer(async (req, res) => {
         country: body.country,
         userId: body.userId,
         userProfile: normalizeUserProfile(body.userProfile || { conditions: [], restrictions: [] }),
-        maxRestaurants: body.maxRestaurants,
+        maxRestaurants: normaliseMaxRestaurants(body.maxRestaurants),
+        skipGroqClassify: body.skipGroqClassify,
       };
       const cacheKey = recommendationCacheKey(payload);
       const cached = getCachedRecommendation(cacheKey);
