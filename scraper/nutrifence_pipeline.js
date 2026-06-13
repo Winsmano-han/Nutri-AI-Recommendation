@@ -417,6 +417,7 @@ async function resolveArchetype(place) {
     return archetypeCache.get(place.place_id);
   }
 
+  const fallbackKey = COUNTRY_PACK.unknownArchetype;
   const patternResult = classifyByPattern(
     place.name,
     place.types,
