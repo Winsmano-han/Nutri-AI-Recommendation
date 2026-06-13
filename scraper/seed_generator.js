@@ -150,7 +150,9 @@ export function generateRestaurantSeeds({
     }));
   }
 
-  const brand = findBrandProfile(countryPack.countryCode, text);
+  // Brand profiles should match the venue name only. Full metadata can contain
+  // unrelated domains, addresses, or summaries that create false brand matches.
+  const brand = findBrandProfile(countryPack.countryCode, name);
   if (brand) {
     evidence.push(scoreEvidence({
       source: `brand_profile:${brand.id}`,

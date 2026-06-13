@@ -3,8 +3,9 @@
 Production-oriented Nigerian restaurant recommendation pipeline with:
 - Google Places venue discovery
 - Local ML model serving (`.joblib`) for dish ranking
-- Groq-based clinical filtering and explanation
+- Multi-provider LLM (Gemini + Groq) for clinical filtering and explanation
 - Contract-driven nutrition rules (FBDG + uploaded doctor/nutritionist plans)
+- Batch processing architecture (2 LLM calls total for 20 restaurants)
 
 ## What This Project Does
 
@@ -13,7 +14,7 @@ Given a user location and profile:
 2. Classifies each venue into a restaurant archetype.
 3. Queries a local FastAPI model server for ranked dish candidates.
 4. Applies nutrition policy via active contract (FBDG baseline + optional user report overrides).
-5. Uses Groq to produce structured `safeOrders`, `avoid`, and `tip`.
+5. Uses multi-provider LLM (Gemini/Groq) to produce structured `safeOrders` and `avoid` items.
 6. Writes recommendation JSON ready for mobile/web consumption.
 
 ---
@@ -40,7 +41,8 @@ Given a user location and profile:
 - Node.js 18+ (for built-in `fetch`)
 - Python 3.10+ (recommended)
 - Google Places API key
-- Groq API key
+- Gemini API key (primary LLM provider)
+- Groq API key (optional secondary provider)
 
 Install Python dependencies:
 
@@ -66,19 +68,25 @@ Create `scraper/.env`:
 
 ```env
 GOOGLE_MAPS_API_KEY=your_google_maps_key
-GROQ_API_KEY=your_groq_key
+GEMINI_API_KEY=your_gemini_key
+GEMINI_MODEL=gemini-2.5-flash
 MODEL_API_URL=http://127.0.0.1:8011
+
+# Optional: Groq as secondary provider
+# GROQ_API_KEY=your_groq_key
 
 # Optional runtime overrides
 USER_LAT=7.3622
 USER_LNG=3.8503
-SEARCH_RADIUS=1500
-MAX_RESTAURANTS=5
+SEARCH_RADIUS=2000
+MAX_RESTAURANTS=20
 ```
 
 Notes:
 - `nutrifence_pipeline.js`, `report_ingestion.js`, and `run_ab_test.js` load `scraper/.env`.
 - You can still override with shell env vars at runtime.
+- Default MAX_RESTAURANTS is 20 (optimized for geofence scanning).
+- Pipeline uses batch mode by default (2 LLM calls total instead of 2N).
 
 ---
 
@@ -146,8 +154,8 @@ npm start
   "lat": 7.3622,
   "lng": 3.8503,
   "country": "NG",
-  "radius": 1500,
-  "maxRestaurants": 5,
+  "radius": 2000,
+  "maxRestaurants": 20,
   "userProfile": {
     "conditions": ["diabetes"],
     "restrictions": ["low sugar"],
@@ -163,8 +171,8 @@ Canada is also supported with the same endpoint:
   "lat": 43.6532,
   "lng": -79.3832,
   "country": "CA",
-  "radius": 1500,
-  "maxRestaurants": 5,
+  "radius": 2000,
+  "maxRestaurants": 20,
   "userProfile": {
     "conditions": ["diabetes"],
     "restrictions": ["low sugar"],
@@ -206,6 +214,34 @@ JSON shape:
   - `avoid[]`
   - `tip`
   - `confidenceNote`
+
+---
+
+## Architecture Highlights
+
+### Batch Processing Mode
+The pipeline uses batch processing to minimize LLM API calls:
+- **Old approach**: 20 restaurants × 2 LLM calls = 40 API calls (~10-20 minutes with rate limits)
+- **New approach**: 1 classify call + 1 explain call = 2 API calls (~40 seconds total)
+
+### Multi-Provider LLM Manager
+Automatic failover between providers:
+- **Primary**: Gemini 2.5 Flash (fast, reliable)
+- **Secondary**: Groq Llama 3.3 70B (optional fallback)
+- Round-robin load balancing with health tracking
+- Automatic rate limit handling
+
+### Evidence-Based Seed Generation
+Restaurant seeds prioritized by evidence strength:
+1. **Brand profiles** (0.90 confidence) - Known chains
+2. **Google metadata** (0.72 confidence) - Menu hints, tags
+3. **Restaurant archetype** (0.42-0.62 confidence) - Category defaults
+4. **Country prior** (0.35 confidence) - National cuisine baseline
+
+### Model Deduplication
+- 10 seed terms × 6 dishes = 60 potential recommendations
+- Deduplication by dish name keeps first occurrence
+- Final output: 14-58 unique dishes per restaurant, sorted by similarity
 
 ---
 
@@ -295,7 +331,7 @@ Minimal request contract for upstream API layer:
   "lat": 7.3622,
   "lng": 3.8503,
   "country": "NG",
-  "radius": 1500,
+  "radius": 2000,
   "userProfile": {
     "conditions": ["diabetes"],
     "restrictions": ["low sugar"],
@@ -310,8 +346,10 @@ Allergy input can be either an array or a comma-separated string. The backend no
 
 ## Known Operational Guidance
 
-- If model server is down, pipeline degrades to Groq-only recommendations.
-- If Groq returns `429`, retry/backoff is built into pipeline Groq calls.
+- If model server is down, pipeline degrades to LLM-only recommendations.
+- If LLM rate limits are hit, automatic failover to secondary provider occurs.
+- Default MAX_RESTAURANTS=20 is optimized for 2km radius geofence scanning.
+- Batch mode processes all restaurants in ~40 seconds (2 LLM calls total).
 - For stable outputs in tests, keep `MAX_RESTAURANTS` small and use fixed location/radius.
 
 

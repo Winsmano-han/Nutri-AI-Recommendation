@@ -224,9 +224,9 @@ function pipelineError(err) {
     return timeoutErr;
   }
 
-  if (/Groq request timed out|Groq explain error|Groq fetch failed/i.test(combined)) {
+  if (/Groq request timed out|Groq explain error|Groq fetch failed|Groq rate limit 429/i.test(combined)) {
     const groqErr = new Error(`Groq recommendation explanation failed. Details:\n${tail}`);
-    groqErr.statusCode = /timed out/i.test(combined) ? 504 : 502;
+    groqErr.statusCode = /timed out|rate limit 429/i.test(combined) ? 504 : 502;
     return groqErr;
   }
 
@@ -242,6 +242,7 @@ async function runPipeline(payload) {
     USER_LAT: String(payload.lat),
     USER_LNG: String(payload.lng),
     SEARCH_RADIUS: String(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
+    MODEL_API_URL,
     USER_PROFILE: JSON.stringify(normalizeUserProfile(payload.userProfile || { conditions: [], restrictions: [] })),
   };
   if (payload.country != null) env.USER_COUNTRY = String(payload.country);
@@ -250,6 +251,7 @@ async function runPipeline(payload) {
   env.SKIP_GROQ_CLASSIFY = String(payload.skipGroqClassify ?? process.env.SKIP_GROQ_CLASSIFY ?? "1");
   env.GROQ_TIMEOUT_MS = String(process.env.GROQ_TIMEOUT_MS || "15000");
   env.GROQ_MAX_RETRIES = String(process.env.GROQ_MAX_RETRIES || "1");
+  env.GROQ_MAX_RETRY_WAIT_MS = String(process.env.GROQ_MAX_RETRY_WAIT_MS || "15000");
 
   try {
     await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
@@ -350,6 +352,7 @@ const server = http.createServer(async (req, res) => {
           pipelineTimeoutMs: PIPELINE_TIMEOUT_MS,
           groqTimeoutMs: parseInt(process.env.GROQ_TIMEOUT_MS || "15000", 10),
           groqMaxRetries: parseInt(process.env.GROQ_MAX_RETRIES || "1", 10),
+          groqMaxRetryWaitMs: parseInt(process.env.GROQ_MAX_RETRY_WAIT_MS || "15000", 10),
         },
       });
     }

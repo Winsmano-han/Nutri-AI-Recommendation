@@ -37,6 +37,8 @@ import { fileURLToPath } from "url";
 import { loadCountryPack, normalizeCountry, inferCountryFromCoordinates } from "./country_packs/index.js";
 import { loadUserContract, contractStoreInfo } from "./contract_store.js";
 import { generateRestaurantSeeds } from "./seed_generator.js";
+import { LLMProviderManager } from "./llm_provider_manager.js";
+import { batchClassifyRestaurants, batchExplainRecommendations } from "./batch_llm_operations.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dns.setDefaultResultOrder("ipv4first");
@@ -58,28 +60,30 @@ if (fs.existsSync(envPath)) {
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const GROQ_API_KEY        = process.env.GROQ_API_KEY;
+const GEMINI_API_KEY      = process.env.GEMINI_API_KEY;
 const MODEL_API_URL       = (process.env.MODEL_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === "YOUR_KEY_HERE") {
   console.error("❌  GOOGLE_MAPS_API_KEY is not set. Add it to .env");
   process.exit(1);
 }
-if (!GROQ_API_KEY || GROQ_API_KEY === "YOUR_KEY_HERE") {
-  console.error("❌  GROQ_API_KEY is not set. Get a free key at https://console.groq.com");
+if ((!GROQ_API_KEY || GROQ_API_KEY === "YOUR_KEY_HERE") && (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_KEY_HERE")) {
+  console.error("❌  At least one LLM API key (GROQ_API_KEY or GEMINI_API_KEY) must be set");
   process.exit(1);
 }
 
 const GROQ_MODEL   = "llama-3.3-70b-versatile";
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GOOGLE_TIMEOUT_MS = parseInt(process.env.GOOGLE_TIMEOUT_MS || "20000", 10);
-const GROQ_TIMEOUT_MS = parseInt(process.env.GROQ_TIMEOUT_MS || "45000", 10);
+const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || "45000", 10);
 const MODEL_TIMEOUT_MS = parseInt(process.env.MODEL_TIMEOUT_MS || "20000", 10);
+const ENABLE_BATCH_MODE = process.env.ENABLE_BATCH_MODE !== "0"; // Default ON
 
 // Default coords: Ibadan city center (University of Ibadan area)
 const USER_LAT      = parseFloat(process.env.USER_LAT  || "7.3775");
 const USER_LNG      = parseFloat(process.env.USER_LNG  || "3.9470");
 const SEARCH_RADIUS = parseInt(process.env.SEARCH_RADIUS || "2000", 10);
-const MAX_RESTAURANTS = parseInt(process.env.MAX_RESTAURANTS || "3", 10);
+const MAX_RESTAURANTS = parseInt(process.env.MAX_RESTAURANTS || "20", 10);
 
 // Parse user health profile from env or use empty defaults
 let USER_PROFILE = { conditions: [], restrictions: [] };
@@ -844,6 +848,14 @@ async function groqWithRetry(url, options, maxRetries = parseInt(process.env.GRO
           : Math.pow(2, attempt + 3) * 1000; // 8s, 16s, 32s...
         const jitter = baseWait * 0.2 * (Math.random() * 2 - 1);
         const wait = Math.max(1000, Math.round(baseWait + jitter));
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : null;
+
+        if (wait > GROQ_MAX_RETRY_WAIT_MS) {
+          throw new Error(
+            `Groq rate limit 429: retry-after=${retryAfterSeconds ?? "not provided"}s exceeds max local wait ` +
+            `${Math.round(GROQ_MAX_RETRY_WAIT_MS / 1000)}s`
+          );
+        }
 
         if (attempt < maxRetries) {
           console.warn(
@@ -857,6 +869,9 @@ async function groqWithRetry(url, options, maxRetries = parseInt(process.env.GRO
       return response;
     } catch (err) {
       lastError = err;
+      if (/Groq rate limit 429: .*exceeds max local wait/i.test(err.message || "")) {
+        throw err;
+      }
       const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
       if (attempt < maxRetries) {
         const wait = Math.pow(2, attempt + 3) * 1000;
@@ -1037,12 +1052,23 @@ async function checkModelServer() {
 
 async function main() {
   console.log("🍽️  Nutrifence — Restaurant Recommendation Pipeline");
-  console.log(`   Groq model : ${GROQ_MODEL}`);
+  console.log(`   Mode       : ${ENABLE_BATCH_MODE ? "BATCH (2 LLM calls total)" : "SEQUENTIAL (2N LLM calls)"}`);
   console.log(`   Model API  : ${MODEL_API_URL}`);
   console.log(`   Country    : ${USER_COUNTRY}`);
   console.log(`   Location   : ${USER_LAT}, ${USER_LNG}  radius ${SEARCH_RADIUS}m`);
   console.log(`   Profile    : conditions=[${USER_PROFILE.conditions}]  restrictions=[${USER_PROFILE.restrictions}]`);
   console.log("══════════════════════════════════════════════════════\n");
+
+  // Initialize LLM manager
+  const groqKeys = GROQ_API_KEY && GROQ_API_KEY !== "YOUR_KEY_HERE" ? [GROQ_API_KEY] : [];
+  const llmManager = new LLMProviderManager({
+    groqKeys,
+    groqModel: GROQ_MODEL,
+    geminiKey: GEMINI_API_KEY,
+    geminiModel: GEMINI_MODEL,
+    timeout: LLM_TIMEOUT_MS,
+  });
+  console.log();
 
   // ── Step 0: Health-check model server ──
   console.log("🔌 Step 0: Checking model server…");
@@ -1096,72 +1122,177 @@ async function main() {
     return;
   }
 
-  // ── Step 2: Classify + get model recs + explain ──
-  console.log("🔍 Step 2: Classifying, running models, generating recommendations…\n");
-
-  const venues          = [];
-  const recommendations = {};
-  let successCount      = 0;
-  let failCount         = 0;
-  const failures        = [];
-
+  // ── Step 2: Fetch details for all restaurants ──
+  console.log("🔍 Step 2: Fetching place details for all restaurants…\n");
+  
+  const placeDetailsMap = new Map();
   for (let i = 0; i < placesToProcess.length; i++) {
     const basicPlace = placesToProcess[i];
     console.log(`[${i + 1}/${placesToProcess.length}] ${basicPlace.name}`);
-
     try {
-      // Fetch full place details
       const details = await getPlaceDetails(basicPlace.place_id);
       const coords = resolveVenueCoordinates(details, basicPlace);
+      placeDetailsMap.set(basicPlace.place_id, { details, coords, basicPlace });
       await sleep(150);
+    } catch (e) {
+      console.warn(`  ❌ Failed to fetch details: ${e.message}`);
+    }
+  }
+  
+  console.log(`\n✅ Fetched details for ${placeDetailsMap.size}/${placesToProcess.length} restaurants\n`);
 
-      // Classify archetype
-      process.stdout.write(`  🏷️  Classifying archetype… `);
-      const archetype = await resolveArchetype(details);
-      const source    = classifyByPattern(details.name, details.types, USER_COUNTRY) ? "pattern" : "groq";
-      console.log(`${archetype} (via ${source})`);
+  if (placeDetailsMap.size === 0) {
+    throw new Error("No restaurant details could be fetched");
+  }
 
-      const seedInfo = generateRestaurantSeeds({
-        place: details,
-        archetype,
-        country: USER_COUNTRY,
-        maxTerms: 10,
+  // ── Step 3: Batch classify restaurants (1 LLM call) ──
+  console.log("🏷️  Step 3: Batch classifying restaurant archetypes…\n");
+  
+  // Pattern-match what we can, collect rest for LLM
+  const archetypeMap = new Map();
+  const needsLLMClassification = [];
+  
+  for (const [placeId, data] of placeDetailsMap) {
+    const patternResult = classifyByPattern(data.details.name, data.details.types, USER_COUNTRY);
+    if (patternResult) {
+      archetypeMap.set(placeId, patternResult);
+      console.log(`  ✓ ${data.details.name}: ${patternResult} (pattern)`);
+    } else {
+      needsLLMClassification.push({
+        place_id: placeId,
+        name: data.details.name,
+        address: data.details.formatted_address,
+        types: data.details.types,
+        editorial: data.details.editorial_summary?.overview,
       });
-      console.log(
-        `  🌱 Seed evidence… ${seedInfo.seedSource} ` +
-        `(confidence ${seedInfo.seedConfidence.toFixed(2)}, ${seedInfo.seedTerms.length} terms)`
-      );
+    }
+  }
+  
+  if (needsLLMClassification.length > 0 && ENABLE_BATCH_MODE) {
+    console.log(`\n  🤖 Batch classifying ${needsLLMClassification.length} ambiguous restaurants via LLM…`);
+    const batchClassifications = await batchClassifyRestaurants(
+      llmManager,
+      needsLLMClassification,
+      ARCHETYPES,
+      COUNTRY_PACK.countryLabel,
+      COUNTRY_PACK.unknownArchetype
+    );
+    for (const [placeId, archetype] of batchClassifications) {
+      archetypeMap.set(placeId, archetype);
+      const data = placeDetailsMap.get(placeId);
+      console.log(`  ✓ ${data.details.name}: ${archetype} (llm)`);
+    }
+  } else if (needsLLMClassification.length > 0) {
+    // Fallback to unknown if batch mode disabled
+    for (const restaurant of needsLLMClassification) {
+      archetypeMap.set(restaurant.place_id, COUNTRY_PACK.unknownArchetype);
+    }
+  }
 
-      // Get model recommendations (skip if server is down — flag as low confidence)
-      let modelRecs = [];
-      if (modelServerUp) {
-        process.stdout.write(`  🤖 Model inference (${seedInfo.seedTerms.length} evidence seeds)… `);
-        if (shouldSkipModelForArchetype(archetype)) {
-          console.log("skipped for this archetype/model mode");
-        } else {
-          modelRecs = await getModelRecommendations(seedInfo.seedTerms, USER_PROFILE.conditions || []);
-          modelRecs = filterModelRecommendationsForArchetype(archetype, modelRecs);
-          console.log(`${modelRecs.length} ranked dishes`);
-        }
-      } else {
-        console.log(`  ⚠️  Model server offline — skipping inference, using Groq knowledge only`);
+  // ── Step 4: Generate seeds and get model recommendations ──
+  console.log("\n🌱 Step 4: Generating seeds and fetching model recommendations…\n");
+  
+  const restaurantData = [];
+  for (const [placeId, data] of placeDetailsMap) {
+    const archetype = archetypeMap.get(placeId) || COUNTRY_PACK.unknownArchetype;
+    
+    const seedInfo = generateRestaurantSeeds({
+      place: data.details,
+      archetype,
+      country: USER_COUNTRY,
+      maxTerms: 10,
+    });
+    
+    console.log(`[${data.details.name}]`);
+    console.log(`  🏷️  ${archetype}`);
+    console.log(`  🌱 Seeds: ${seedInfo.seedSource} (conf: ${seedInfo.seedConfidence.toFixed(2)}, ${seedInfo.seedTerms.length} terms)`);
+    
+    let modelRecs = [];
+    if (modelServerUp && !shouldSkipModelForArchetype(archetype)) {
+      try {
+        modelRecs = await getModelRecommendations(seedInfo.seedTerms, USER_PROFILE.conditions || []);
+        modelRecs = filterModelRecommendationsForArchetype(archetype, modelRecs);
+        console.log(`  🤖 Model: ${modelRecs.length} dishes`);
+      } catch (e) {
+        console.warn(`  ⚠️  Model error: ${e.message}`);
       }
+    }
+    
+    restaurantData.push({
+      place_id: placeId,
+      name: data.details.name,
+      archetype,
+      details: data.details,
+      coords: data.coords,
+      seedInfo,
+      modelRecs: modelRecs.slice(0, 15),
+    });
+  }
 
-      // Groq explain + filter
-      process.stdout.write(`  💬 Generating advice (Groq)… `);
-      const visibleModelRecs = modelRecs.slice(0, 10);
-      let advice = await explainWithGroq(details.name, archetype, visibleModelRecs, USER_PROFILE, activeContractData);
-      advice = normaliseAdviceShape(advice, archetype);
-      advice = makeUnknownAdviceSafer(advice, archetype);
-      console.log(`${advice.safeOrders?.length || 0} safe orders, ${advice.avoid?.length || 0} avoids`);
+  // ── Step 5: Batch explain recommendations (1 LLM call) ──
+  console.log("\n💬 Step 5: Batch generating nutrition advice for all restaurants…\n");
+  
+  const nutritionBlock = buildNutritionPromptBlock(activeContractData, USER_PROFILE);
+  const countryLabel = USER_COUNTRY === "CA" ? "Canadian" : "Nigerian";
+  const contextTip = USER_COUNTRY === "CA"
+    ? "Canadian context (e.g. sauces/dressings/gravy on the side, water instead of pop, grilled/baked instead of fried, salad/vegetables instead of fries or poutine)"
+    : "Nigerian context (e.g. ask for soup without stock cubes, choose grilled/boiled instead of fried)";
+  
+  let adviceMap = new Map();
+  if (ENABLE_BATCH_MODE) {
+    adviceMap = await batchExplainRecommendations(
+      llmManager,
+      restaurantData,
+      USER_PROFILE,
+      nutritionBlock,
+      ARCHETYPES,
+      buildBrandGuidanceBlock,
+      countryLabel,
+      contextTip
+    );
+  } else {
+    // Sequential fallback
+    for (const restaurant of restaurantData) {
+      const advice = await explainWithGroq(
+        restaurant.name,
+        restaurant.archetype,
+        restaurant.modelRecs,
+        USER_PROFILE,
+        activeContractData
+      );
+      adviceMap.set(restaurant.place_id, advice);
+    }
+  }
 
-      venues.push(buildVenueObject(details, archetype, coords, coords.coordSource));
+  // ── Step 6: Build final output ──
+  console.log("\n📦 Step 6: Building final recommendation output…\n");
+  
+  const venues = [];
+  const recommendations = {};
+  let successCount = 0;
+  const failures = [];
+  
+  for (const restaurant of restaurantData) {
+    try {
+      let advice = adviceMap.get(restaurant.place_id) || {
+        safeOrders: [],
+        avoid: [],
+        tip: null,
+        confidenceNote: "Could not generate advice for this venue.",
+      };
+      
+      advice = normaliseAdviceShape(advice, restaurant.archetype);
+      advice = makeUnknownAdviceSafer(advice, restaurant.archetype);
+      
+      venues.push(buildVenueObject(restaurant.details, restaurant.archetype, restaurant.coords, restaurant.coords.coordSource));
+      
       const inferredConfidenceNote =
-        archetype === "unknown" || archetype === "unknown_canada"
+        restaurant.archetype === "unknown" || restaurant.archetype === "unknown_canada"
           ? `Low confidence: venue archetype is unknown, so recommendations use generic ${USER_COUNTRY === "CA" ? "Canadian" : "Nigerian"} restaurant guidance.`
           : null;
-      recommendations[details.place_id] = {
-        modelRecommendations: visibleModelRecs.map(r => ({
+      
+      recommendations[restaurant.place_id] = {
+        modelRecommendations: restaurant.modelRecs.map(r => ({
           dish:            r.dish_name,
           similarityScore: parseFloat((r.similarity_score || 0).toFixed(3)),
           healthLabel:     r.health_label || null,
@@ -1174,41 +1305,37 @@ async function main() {
         ...advice,
         confidenceNote: advice.confidenceNote || inferredConfidenceNote,
         confidence: buildConfidence({
-          archetype,
-          modelUsed: modelServerUp && visibleModelRecs.length > 0,
+          archetype: restaurant.archetype,
+          modelUsed: modelServerUp && restaurant.modelRecs.length > 0,
           userContractUsed: activeContractData.userContractUsed,
-          menuAvailable: Boolean(details.website),
+          menuAvailable: Boolean(restaurant.details.website),
         }),
         seed: {
-          source: seedInfo.seedSource,
-          confidence: seedInfo.seedConfidence,
-          terms: seedInfo.seedTerms,
-          evidence: seedInfo.evidence.map((item) => ({
+          source: restaurant.seedInfo.seedSource,
+          confidence: restaurant.seedInfo.seedConfidence,
+          terms: restaurant.seedInfo.seedTerms,
+          evidence: restaurant.seedInfo.evidence.map((item) => ({
             source: item.source,
             confidence: item.confidence,
             terms: item.terms,
             reason: item.reason,
           })),
         },
-        modelServerUsed:  modelServerUp,
-        archetype,
+        modelServerUsed: modelServerUp,
+        archetype: restaurant.archetype,
       };
-
+      
       successCount++;
     } catch (e) {
-      const failure = {
-        venue: basicPlace.name,
-        placeId: basicPlace.place_id,
+      failures.push({
+        venue: restaurant.name,
+        placeId: restaurant.place_id,
         error: e.message,
-      };
-      failures.push(failure);
-      console.warn(`  ❌ ${failure.venue}: ${failure.error}`);
-      failCount++;
+      });
     }
-
-    await sleep(300);
-    console.log();
   }
+  
+  const failCount = failures.length;
 
   // ── Step 3: Write output ──
   console.log("══════════════════════════════════════════════════════");
@@ -1224,13 +1351,19 @@ async function main() {
     );
   }
 
+  const llmStats = llmManager.getStats();
+  console.log(`\n📊 LLM Provider Stats:`);
+  for (const provider of llmStats.providers) {
+    console.log(`   ${provider.id}: ${provider.callCount} calls (${provider.health.status})`);
+  }
+
   const output = {
     _meta: {
       generatedAt:     new Date().toISOString(),
-      pipelineVersion: "2.0.0",
-      source:          "Google Maps Places API + Nutrifence joblib models + Groq AI",
+      pipelineVersion: "3.0.0-batch",
+      source:          "Google Maps Places API + Nutrifence joblib models + Multi-Provider LLM",
       country:         USER_COUNTRY,
-      apiVersion:      "1.1",
+      apiVersion:      "1.2",
       contractSource:  activeContractData.contractSource,
       contractStore:   contractStoreInfo(),
       modelFamily:     USER_COUNTRY === "CA" ? "canada_cnf_2026_model" : COUNTRY_PACK.modelMode,
@@ -1240,7 +1373,8 @@ async function main() {
       venueCount:      venues.length,
       failures,
       modelServerUsed: modelServerUp,
-      groqModel:       GROQ_MODEL,
+      batchMode:       ENABLE_BATCH_MODE,
+      llmStats:        llmStats,
     },
     venues,
     recommendations,
