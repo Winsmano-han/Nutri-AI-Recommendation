@@ -826,7 +826,7 @@ function sleep(ms) {
 /**
  * Wraps fetch() for Groq API calls with exponential backoff on 429.
  */
-async function groqWithRetry(url, options, maxRetries = 3) {
+async function groqWithRetry(url, options, maxRetries = parseInt(process.env.GROQ_MAX_RETRIES || "3", 10)) {
   let lastError = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -856,15 +856,21 @@ async function groqWithRetry(url, options, maxRetries = 3) {
       return response;
     } catch (err) {
       lastError = err;
+      const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
       if (attempt < maxRetries) {
         const wait = Math.pow(2, attempt + 3) * 1000;
-        console.warn(`  ⏳ Groq network error (${err.message}) — retrying in ${wait / 1000}s...`);
+        console.warn(`  ⏳ Groq ${isTimeout ? "timeout" : "network error"} (${err.message}) — retrying in ${wait / 1000}s...`);
         await sleep(wait);
       }
     }
   }
 
-  throw new Error(`Groq fetch failed for ${url}: ${lastError?.message || "request failed after max retries"}`);
+  const timedOut = lastError?.name === "TimeoutError" || lastError?.name === "AbortError";
+  throw new Error(
+    timedOut
+      ? `Groq request timed out after ${GROQ_TIMEOUT_MS}ms while calling ${url}`
+      : `Groq fetch failed for ${url}: ${lastError?.message || "request failed after max retries"}`
+  );
 }
 
 function slugify(str) {
@@ -1096,6 +1102,7 @@ async function main() {
   const recommendations = {};
   let successCount      = 0;
   let failCount         = 0;
+  const failures        = [];
 
   for (let i = 0; i < placesToProcess.length; i++) {
     const basicPlace = placesToProcess[i];
@@ -1188,7 +1195,13 @@ async function main() {
 
       successCount++;
     } catch (e) {
-      console.warn(`  ❌ ${e.message}`);
+      const failure = {
+        venue: basicPlace.name,
+        placeId: basicPlace.place_id,
+        error: e.message,
+      };
+      failures.push(failure);
+      console.warn(`  ❌ ${failure.venue}: ${failure.error}`);
       failCount++;
     }
 
@@ -1201,6 +1214,14 @@ async function main() {
   console.log(`✅ Success: ${successCount}   ❌ Failed/skipped: ${failCount}`);
   console.log(`📦 ${venues.length} venues with recommendations`);
   console.log("\n📝 Writing output…");
+
+  if (successCount === 0 && failCount > 0) {
+    const lastFailure = failures[failures.length - 1];
+    throw new Error(
+      `Recommendation pipeline failed for all ${failCount} venues. ` +
+      `Last failure at "${lastFailure?.venue || "unknown venue"}": ${lastFailure?.error || "unknown error"}`
+    );
+  }
 
   const output = {
     _meta: {
@@ -1216,6 +1237,7 @@ async function main() {
       userLocation:    { lat: USER_LAT, lng: USER_LNG, radiusMetres: SEARCH_RADIUS },
       userProfile:     USER_PROFILE,
       venueCount:      venues.length,
+      failures,
       modelServerUsed: modelServerUp,
       groqModel:       GROQ_MODEL,
     },

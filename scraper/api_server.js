@@ -42,6 +42,7 @@ const MAX_PIPELINE_QUEUE = parseInt(process.env.MAX_PIPELINE_QUEUE || "20", 10);
 const DEFAULT_MAX_RESTAURANTS = parseInt(process.env.DEFAULT_MAX_RESTAURANTS || "3", 10);
 const HARD_MAX_RESTAURANTS = parseInt(process.env.HARD_MAX_RESTAURANTS || "5", 10);
 const GEO_CACHE_DECIMALS = parseInt(process.env.GEO_CACHE_DECIMALS || "2", 10);
+const PIPELINE_TIMEOUT_MS = parseInt(process.env.PIPELINE_TIMEOUT_MS || "170000", 10);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -211,6 +212,29 @@ function setCachedRecommendation(key, value) {
   responseCache.set(key, { createdAt: Date.now(), value });
 }
 
+function pipelineError(err) {
+  const stderr = String(err.stderr || "").trim();
+  const stdout = String(err.stdout || "").trim();
+  const combined = [stderr, stdout, err.message].filter(Boolean).join("\n");
+  const tail = combined.slice(-3000);
+
+  if (err.killed || err.signal === "SIGTERM" || /timed out/i.test(err.message || "")) {
+    const timeoutErr = new Error(`Recommendation pipeline timed out after ${PIPELINE_TIMEOUT_MS}ms. Last output:\n${tail}`);
+    timeoutErr.statusCode = 504;
+    return timeoutErr;
+  }
+
+  if (/Groq request timed out|Groq explain error|Groq fetch failed/i.test(combined)) {
+    const groqErr = new Error(`Groq recommendation explanation failed. Details:\n${tail}`);
+    groqErr.statusCode = /timed out/i.test(combined) ? 504 : 502;
+    return groqErr;
+  }
+
+  const genericErr = new Error(`Recommendation pipeline failed. Details:\n${tail}`);
+  genericErr.statusCode = 500;
+  return genericErr;
+}
+
 async function runPipeline(payload) {
   const before = listRecommendationOutputs()[0]?.name;
   const env = {
@@ -224,6 +248,8 @@ async function runPipeline(payload) {
   if (payload.userId != null) env.USER_ID = String(payload.userId);
   env.MAX_RESTAURANTS = String(normaliseMaxRestaurants(payload.maxRestaurants));
   env.SKIP_GROQ_CLASSIFY = String(payload.skipGroqClassify ?? process.env.SKIP_GROQ_CLASSIFY ?? "1");
+  env.GROQ_TIMEOUT_MS = String(process.env.GROQ_TIMEOUT_MS || "15000");
+  env.GROQ_MAX_RETRIES = String(process.env.GROQ_MAX_RETRIES || "1");
 
   try {
     await execFileAsync(process.execPath, ["nutrifence_pipeline.js"], {
@@ -231,16 +257,10 @@ async function runPipeline(payload) {
       env,
       windowsHide: true,
       maxBuffer: 10 * 1024 * 1024,
+      timeout: PIPELINE_TIMEOUT_MS,
     });
   } catch (err) {
-    const stderr = String(err.stderr || "").trim();
-    const stdout = String(err.stdout || "").trim();
-    const detail = [
-      err.message,
-      stderr ? `stderr:\n${stderr.slice(-2000)}` : null,
-      stdout ? `stdout:\n${stdout.slice(-2000)}` : null,
-    ].filter(Boolean).join("\n\n");
-    throw new Error(detail);
+    throw pipelineError(err);
   }
 
   const outputs = listRecommendationOutputs();
@@ -327,6 +347,9 @@ const server = http.createServer(async (req, res) => {
           geoCacheDecimals: GEO_CACHE_DECIMALS,
           cacheTtlMs: CACHE_TTL_MS,
           skipGroqClassifyDefault: process.env.SKIP_GROQ_CLASSIFY ?? "1",
+          pipelineTimeoutMs: PIPELINE_TIMEOUT_MS,
+          groqTimeoutMs: parseInt(process.env.GROQ_TIMEOUT_MS || "15000", 10),
+          groqMaxRetries: parseInt(process.env.GROQ_MAX_RETRIES || "1", 10),
         },
       });
     }
