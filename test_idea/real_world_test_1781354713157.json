@@ -1,0 +1,358 @@
+{
+  "testConfig": {
+    "location": {
+      "lat": 6.4281,
+      "lng": 3.4219
+    },
+    "radius": 2000,
+    "maxRestaurants": 15,
+    "userProfile": {
+      "conditions": [
+        "diabetes"
+      ],
+      "restrictions": [
+        "low sugar"
+      ],
+      "allergies": [
+        "peanuts"
+      ],
+      "age": 45,
+      "activityLevel": "moderate",
+      "gender": "male"
+    }
+  },
+  "totalDuration": 26480,
+  "llmCalls": 2,
+  "providerStats": {
+    "providers": [
+      {
+        "id": "groq_1",
+        "type": "groq",
+        "callCount": 2,
+        "health": {
+          "status": "rate_limited",
+          "lastError": "Rate limited for 4305s",
+          "rateLimitUntil": 1781358993943
+        }
+      },
+      {
+        "id": "gemini_1",
+        "type": "gemini",
+        "callCount": 2,
+        "health": {
+          "status": "healthy",
+          "lastError": null,
+          "rateLimitUntil": null
+        }
+      }
+    ],
+    "totalCalls": 4
+  },
+  "restaurants": [
+    {
+      "place_id": "ChIJ3YVnbtqKOxAR-c_nRQAb3U0",
+      "name": "Federal Palace Hotel and Casino",
+      "types": [
+        "lodging",
+        "casino",
+        "bar",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "6-8 Ahmadu Bello Way, Lagos",
+      "rating": 4.4,
+      "user_ratings_total": 7490,
+      "archetype": "hotel_restaurant"
+    },
+    {
+      "place_id": "ChIJQ8M3kzL1OxAR5BLqripFvRU",
+      "name": "Domino's Pizza Nigeria",
+      "types": [
+        "meal_delivery",
+        "meal_takeaway",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "4 Saka Tinubu Street, Lagos",
+      "rating": 4.2,
+      "user_ratings_total": 1337,
+      "archetype": "fast_food_western"
+    },
+    {
+      "place_id": "ChIJJ-qwaT31OxARl9-s-Ru6OiI",
+      "name": "The Hedge Suites / Hedge Lounge",
+      "types": [
+        "lodging",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "194B Jide Oki Street, Lagos",
+      "rating": 3.8,
+      "user_ratings_total": 301,
+      "archetype": "hotel_restaurant"
+    },
+    {
+      "place_id": "ChIJH-CPUyT1OxARkeGRrp21TcA",
+      "name": "Mama Cass Restaurant",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "Plot 271B Ajose Adeogun Street, Lagos",
+      "rating": 3.4,
+      "user_ratings_total": 762,
+      "archetype": "casual_nigerian"
+    },
+    {
+      "place_id": "ChIJIzzPudKKOxARGSd46oDKpMY",
+      "name": "Jevinik Restaurant",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "14B Agoro Odiyan Street, Lagos",
+      "rating": 4.2,
+      "user_ratings_total": 3693,
+      "archetype": "casual_nigerian"
+    },
+    {
+      "place_id": "ChIJmSU21iz1OxARhq0wrqI5fxE",
+      "name": "Le scale Restaurant & Guest House",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "CCJC+F2F, Akin Olugbade Street, Lagos",
+      "rating": 5,
+      "user_ratings_total": 1,
+      "archetype": "hotel_restaurant"
+    },
+    {
+      "place_id": "ChIJ08Fpxs2KOxAROPu5xPTSzwY",
+      "name": "La Veranda Italian Cuisine",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "17 Oju Olobun Close, Lagos",
+      "rating": 4.3,
+      "user_ratings_total": 537,
+      "archetype": "fine_dining"
+    },
+    {
+      "place_id": "ChIJRxOErDP1OxARDopSinSyeaA",
+      "name": "Bar Campione",
+      "types": [
+        "bar",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "13 Kasumu Ekemode Street, Lagos",
+      "rating": 3.9,
+      "user_ratings_total": 21,
+      "archetype": "fast_food_western"
+    },
+    {
+      "place_id": "ChIJ47AVd86KOxARmKbgSTD8IHM",
+      "name": "Izanagi Japanese Cuisine",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "19B Idejo Street, Lagos",
+      "rating": 4.4,
+      "user_ratings_total": 683,
+      "archetype": "fine_dining"
+    },
+    {
+      "place_id": "ChIJU71QVSz1OxAR4ZAV6ROmJhQ",
+      "name": "Kuramo Sports Caf",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "270 Adetokunbo Ademola Street, Lagos",
+      "rating": 3.5,
+      "user_ratings_total": 8,
+      "archetype": "casual_nigerian"
+    },
+    {
+      "place_id": "ChIJce13KS71OxARa-MpK4TLJ54",
+      "name": "Abibiz Restaurant",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "3 Oko Awo Street, Lagos",
+      "rating": 3.5,
+      "user_ratings_total": 15,
+      "archetype": "casual_nigerian"
+    },
+    {
+      "place_id": "ChIJNRmWd86KOxARxFDK-6EltPI",
+      "name": "The Pulse Victoria Island Lagos",
+      "types": [
+        "night_club",
+        "bar",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "19B Idejo Street, Lagos",
+      "rating": 4.2,
+      "user_ratings_total": 1219,
+      "archetype": "modern_fusion"
+    },
+    {
+      "place_id": "ChIJz-qJYi_1OxARLAzzu0FrL9s",
+      "name": "Dv8 Restaurant & Lounge",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "14B Adeola Hopewell Street, Lagos",
+      "rating": 4.6,
+      "user_ratings_total": 7,
+      "archetype": "modern_fusion"
+    },
+    {
+      "place_id": "ChIJCR5cxc2KOxARBA98VSuIdw0",
+      "name": "The Poolside by the Blowfish Group",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "17 Oju Olobun Close, Lagos",
+      "rating": 3.9,
+      "user_ratings_total": 38,
+      "archetype": "fine_dining"
+    },
+    {
+      "place_id": "ChIJ8QE-mS31OxARmtV8z-yglSs",
+      "name": "Deeflo Communications",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "Opposite Tantalizer, Lagos",
+      "rating": 3.6,
+      "user_ratings_total": 183,
+      "archetype": "unknown"
+    }
+  ],
+  "recommendations": [
+    {
+      "restaurant": "Federal Palace Hotel and Casino",
+      "safeOrders": [
+        {
+          "dish": "Grilled Fish",
+          "reason": "Lean protein source, beneficial for blood sugar management."
+        },
+        {
+          "dish": "Garden Salad",
+          "reason": "Rich in fiber and low in carbohydrates; ask for dressing on the side to ensure it's sugar-free and peanut-free."
+        },
+        {
+          "dish": "Herbal Tea",
+          "reason": "Sugar-free and hydrating, an ideal beverage choice."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Sugary desserts or sweetened beverages",
+          "reason": "High sugar content, detrimental for diabetes management."
+        },
+        {
+          "item": "Fried items",
+          "reason": "Often high in unhealthy fats and refined carbohydrates, not suitable for diabetes."
+        }
+      ],
+      "tip": "Always confirm with the staff that no peanuts or peanut oil are used in any dish due to your allergy, especially in dressings or marinades."
+    },
+    {
+      "restaurant": "Domino's Pizza Nigeria",
+      "safeOrders": [
+        {
+          "dish": "Grilled Chicken",
+          "reason": "Lean protein source, beneficial for blood sugar management."
+        },
+        {
+          "dish": "Side Salad",
+          "reason": "Rich in fiber and low in carbohydrates; ask for no croutons and dressing on the side to ensure it's sugar-free and peanut-free."
+        },
+        {
+          "dish": "Water",
+          "reason": "Sugar-free and hydrating, an ideal beverage choice."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Pizza",
+          "reason": "High in refined carbohydrates and often sodium, can lead to blood sugar spikes."
+        },
+        {
+          "item": "Sugary soft drinks",
+          "reason": "High sugar content, detrimental for diabetes management."
+        }
+      ],
+      "tip": "When ordering the side salad, explicitly request no croutons and ask for a simple oil and vinegar dressing on the side, confirming it's peanut-free."
+    },
+    {
+      "restaurant": "The Hedge Suites / Hedge Lounge",
+      "safeOrders": [
+        {
+          "dish": "Grilled Fish",
+          "reason": "Lean protein source, beneficial for blood sugar management."
+        },
+        {
+          "dish": "Garden Salad",
+          "reason": "Rich in fiber and low in carbohydrates; ask for dressing on the side to ensure it's sugar-free and peanut-free."
+        },
+        {
+          "dish": "Herbal Tea",
+          "reason": "Sugar-free and hydrating, an ideal beverage choice."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Fried items",
+          "reason": "Often high in unhealthy fats and refined carbohydrates, not suitable for diabetes."
+        },
+        {
+          "item": "Sugary drinks or desserts",
+          "reason": "High sugar content, detrimental for diabetes management."
+        }
+      ],
+      "tip": "Inquire about the cooking method for the fish to ensure it's grilled with minimal oil and confirm no peanuts are used in any sauces or marinades."
+    }
+  ]
+}

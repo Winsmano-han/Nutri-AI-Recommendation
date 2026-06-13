@@ -337,7 +337,7 @@ const server = http.createServer(async (req, res) => {
         runtime: { node: process.version },
         externalConfig: {
           googleMapsConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY),
-          groqConfigured: Boolean(process.env.GROQ_API_KEY),
+          geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
           modelApiUrl: MODEL_API_URL,
           supabaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY)),
         },

@@ -1,0 +1,457 @@
+{
+  "testConfig": {
+    "location": {
+      "lat": 6.4281,
+      "lng": 3.4219
+    },
+    "radius": 2000,
+    "maxRestaurants": 15,
+    "userProfile": {
+      "conditions": [
+        "diabetes"
+      ],
+      "restrictions": [
+        "low sugar"
+      ],
+      "allergies": [
+        "peanuts"
+      ],
+      "age": 45,
+      "activityLevel": "moderate",
+      "gender": "male"
+    }
+  },
+  "totalDuration": 40877,
+  "llmCalls": 2,
+  "providerStats": {
+    "providers": [
+      {
+        "id": "groq_1",
+        "type": "groq",
+        "callCount": 1,
+        "health": {
+          "status": "rate_limited",
+          "lastError": "Rate limited for 147s",
+          "rateLimitUntil": 1781352366334
+        }
+      },
+      {
+        "id": "gemini_1",
+        "type": "gemini",
+        "callCount": 4,
+        "health": {
+          "status": "healthy",
+          "lastError": null,
+          "rateLimitUntil": null
+        }
+      }
+    ],
+    "totalCalls": 5
+  },
+  "restaurants": [
+    {
+      "place_id": "ChIJ3YVnbtqKOxAR-c_nRQAb3U0",
+      "name": "Federal Palace Hotel and Casino",
+      "types": [
+        "casino",
+        "bar",
+        "lodging",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "6-8 Ahmadu Bello Way, Lagos",
+      "rating": 4.4,
+      "user_ratings_total": 7490,
+      "archetype": "hotel_restaurant"
+    },
+    {
+      "place_id": "ChIJQ8M3kzL1OxAR5BLqripFvRU",
+      "name": "Domino's Pizza Nigeria",
+      "types": [
+        "meal_delivery",
+        "meal_takeaway",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "4 Saka Tinubu Street, Lagos",
+      "rating": 4.2,
+      "user_ratings_total": 1337,
+      "archetype": "fast_food"
+    },
+    {
+      "place_id": "ChIJJ-qwaT31OxARl9-s-Ru6OiI",
+      "name": "The Hedge Suites / Hedge Lounge",
+      "types": [
+        "lodging",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "194B Jide Oki Street, Lagos",
+      "rating": 3.8,
+      "user_ratings_total": 301
+    },
+    {
+      "place_id": "ChIJH-CPUyT1OxARkeGRrp21TcA",
+      "name": "Mama Cass Restaurant",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "Plot 271B Ajose Adeogun Street, Lagos",
+      "rating": 3.4,
+      "user_ratings_total": 762
+    },
+    {
+      "place_id": "ChIJIzzPudKKOxARGSd46oDKpMY",
+      "name": "Jevinik Restaurant",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "14B Agoro Odiyan Street, Lagos",
+      "rating": 4.2,
+      "user_ratings_total": 3693
+    },
+    {
+      "place_id": "ChIJmSU21iz1OxARhq0wrqI5fxE",
+      "name": "Le scale Restaurant & Guest House",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "CCJC+F2F, Akin Olugbade Street, Lagos",
+      "rating": 5,
+      "user_ratings_total": 1
+    },
+    {
+      "place_id": "ChIJ08Fpxs2KOxAROPu5xPTSzwY",
+      "name": "La Veranda Italian Cuisine",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "17 Oju Olobun Close, Lagos",
+      "rating": 4.3,
+      "user_ratings_total": 537
+    },
+    {
+      "place_id": "ChIJRxOErDP1OxARDopSinSyeaA",
+      "name": "Bar Campione",
+      "types": [
+        "bar",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "13 Kasumu Ekemode Street, Lagos",
+      "rating": 3.9,
+      "user_ratings_total": 21
+    },
+    {
+      "place_id": "ChIJ47AVd86KOxARmKbgSTD8IHM",
+      "name": "Izanagi Japanese Cuisine",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "19B Idejo Street, Lagos",
+      "rating": 4.4,
+      "user_ratings_total": 683
+    },
+    {
+      "place_id": "ChIJU71QVSz1OxAR4ZAV6ROmJhQ",
+      "name": "Kuramo Sports Caf",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "270 Adetokunbo Ademola Street, Lagos",
+      "rating": 3.5,
+      "user_ratings_total": 8
+    },
+    {
+      "place_id": "ChIJce13KS71OxARa-MpK4TLJ54",
+      "name": "Abibiz Restaurant",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "3 Oko Awo Street, Lagos",
+      "rating": 3.5,
+      "user_ratings_total": 15
+    },
+    {
+      "place_id": "ChIJNRmWd86KOxARxFDK-6EltPI",
+      "name": "The Pulse Victoria Island Lagos",
+      "types": [
+        "night_club",
+        "bar",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "19B Idejo Street, Lagos",
+      "rating": 4.2,
+      "user_ratings_total": 1219
+    },
+    {
+      "place_id": "ChIJz-qJYi_1OxARLAzzu0FrL9s",
+      "name": "Dv8 Restaurant & Lounge",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "14B Adeola Hopewell Street, Lagos",
+      "rating": 4.6,
+      "user_ratings_total": 7
+    },
+    {
+      "place_id": "ChIJCR5cxc2KOxARBA98VSuIdw0",
+      "name": "The Poolside by the Blowfish Group",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "17 Oju Olobun Close, Lagos",
+      "rating": 3.9,
+      "user_ratings_total": 38
+    },
+    {
+      "place_id": "ChIJ8QE-mS31OxARmtV8z-yglSs",
+      "name": "Deeflo Communications",
+      "types": [
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "vicinity": "Opposite Tantalizer, Lagos",
+      "rating": 3.6,
+      "user_ratings_total": 183
+    }
+  ],
+  "recommendations": [
+    {
+      "restaurant": "Federal Palace Hotel and Casino",
+      "safeOrders": [
+        {
+          "dish": "Grilled Fish (e.g., Tilapia or Croaker) with Steamed Vegetables",
+          "reason": "Provides lean protein and fiber, low in sugar and healthy fats, suitable for blood sugar management. Ensure no peanut oil is used."
+        },
+        {
+          "dish": "Chicken Breast Salad (dressing on the side)",
+          "reason": "Offers lean protein and a good source of fiber from fresh vegetables. Request vinaigrette dressing on the side to control sugar and fat intake."
+        },
+        {
+          "dish": "Herbal Tea or Water",
+          "reason": "Sugar-free hydration, ideal for diabetes management."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Buffet Desserts (cakes, pastries, ice cream)",
+          "reason": "Typically high in refined sugars and carbohydrates, which can cause rapid spikes in blood glucose."
+        },
+        {
+          "item": "Sweetened Juices or Soft Drinks",
+          "reason": "Contain high amounts of added sugar, detrimental to blood sugar control."
+        }
+      ],
+      "tip": "Always inquire about cooking methods and ingredients, specifically asking for no added sugar in marinades or sauces, and confirming no peanut oil is used."
+    },
+    {
+      "restaurant": "Domino's Pizza Nigeria",
+      "safeOrders": [
+        {
+          "dish": "Plain Chicken Wings (baked, not fried, if available)",
+          "reason": "A protein-rich option. Request them plain to avoid sugary sauces and ensure no peanut oil is used for frying."
+        },
+        {
+          "dish": "Garden Salad (dressing on the side)",
+          "reason": "Provides fiber and nutrients. Choose a simple vinaigrette and ask for it on the side to control sugar and fat content."
+        },
+        {
+          "dish": "Water",
+          "reason": "The best sugar-free beverage choice."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Any Pizza",
+          "reason": "Pizza crusts are high in refined carbohydrates, which can significantly elevate blood sugar levels. Toppings often contain processed meats and cheeses high in unhealthy fats."
+        },
+        {
+          "item": "Sugary Drinks (e.g., sodas, sweetened iced tea)",
+          "reason": "Directly contribute to high blood sugar and offer no nutritional value."
+        }
+      ],
+      "tip": "When ordering, explicitly state your low-sugar and peanut allergy restrictions. Focus on the most basic, unprocessed options available."
+    },
+    {
+      "restaurant": "The Hedge Suites / Hedge Lounge",
+      "safeOrders": [
+        {
+          "dish": "Grilled Chicken Breast with a side of Steamed Vegetables",
+          "reason": "Lean protein and fiber-rich vegetables support stable blood sugar. Confirm no sugary marinades or peanut oil."
+        },
+        {
+          "dish": "Fish Pepper Soup (clear broth, no thickeners)",
+          "reason": "A light, protein-rich option. Ensure it's made with a clear broth and no starchy thickeners or groundnut paste."
+        },
+        {
+          "dish": "Water or Unsweetened Tea",
+          "reason": "Essential for hydration without adding sugar."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Fried Rice or Jollof Rice (large portions)",
+          "reason": "Often prepared with excess oil and can be high in refined carbohydrates, leading to blood sugar spikes."
+        },
+        {
+          "item": "Pastries or Desserts",
+          "reason": "Typically loaded with sugar and refined flour, unsuitable for diabetes management."
+        }
+      ],
+      "tip": "Communicate your dietary needs clearly to the staff, asking for simple preparations and avoiding hidden sugars in sauces or drinks."
+    },
+    {
+      "restaurant": "Mama Cass Restaurant",
+      "safeOrders": [
+        {
+          "dish": "Grilled Fish (e.g., Croaker) with Efo Riro (Vegetable Soup)",
+          "reason": "Provides lean protein and a good source of fiber and micronutrients from the vegetable soup. Confirm Efo Riro is made without groundnut."
+        },
+        {
+          "dish": "Small portion of Boiled Plantain with Garden Egg Sauce",
+          "reason": "Boiled plantain offers complex carbs in moderation, and garden egg sauce is a nutritious, low-sugar option. Ensure no peanut oil in the sauce."
+        },
+        {
+          "dish": "Water",
+          "reason": "The best choice for hydration without added sugars."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Pounded Yam, Eba, Fufu, or large portions of Rice",
+          "reason": "These are high in refined carbohydrates and can cause significant blood sugar spikes, especially in large servings."
+        },
+        {
+          "item": "Groundnut Soup or any dish with groundnut paste",
+          "reason": "Strictly avoid due to severe peanut allergy."
+        }
+      ],
+      "tip": "When ordering local dishes, always confirm ingredients, especially for soups and sauces, to ensure no groundnut (peanut) is used and to minimize added sugar."
+    },
+    {
+      "restaurant": "Jevinik Restaurant",
+      "safeOrders": [
+        {
+          "dish": "Grilled Tilapia or Catfish with Edikang Ikong Soup",
+          "reason": "Excellent source of lean protein and a nutrient-dense, fiber-rich vegetable soup. Confirm Edikang Ikong is prepared without groundnut."
+        },
+        {
+          "dish": "Afang Soup with a very small portion of Boiled Yam",
+          "reason": "Afang soup is rich in vegetables and protein. Pair with a minimal portion of boiled yam for controlled carbohydrate intake. Confirm no groundnut."
+        },
+        {
+          "dish": "Water or Zobo (unsweetened)",
+          "reason": "Hydrating and sugar-free. If Zobo is available, ensure it's unsweetened."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Large portions of Garri, Semovita, or Wheat",
+          "reason": "These swallows are high in carbohydrates and can lead to elevated blood sugar levels."
+        },
+        {
+          "item": "Any soup or stew containing groundnut (peanut) paste",
+          "reason": "Critical to avoid due to peanut allergy."
+        }
+      ],
+      "tip": "Be specific about your order: request grilled options, confirm no groundnut in soups, and ask for very small portions of starchy sides."
+    },
+    {
+      "restaurant": "Le scale Restaurant & Guest House",
+      "safeOrders": [
+        {
+          "dish": "Grilled Chicken Skewers with a side of Garden Salad",
+          "reason": "Lean protein and fresh vegetables, promoting satiety and stable blood sugar. Ensure no sugary marinades or peanut oil."
+        },
+        {
+          "dish": "Light Vegetable Soup (e.g., clear broth with mixed vegetables)",
+          "reason": "A low-calorie, nutrient-rich option. Confirm no starchy thickeners or groundnut."
+        },
+        {
+          "dish": "Water",
+          "reason": "Optimal for hydration without sugar."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Creamy Pasta Dishes",
+          "reason": "High in refined carbohydrates and unhealthy fats, which can negatively impact blood sugar and cardiovascular health."
+        },
+        {
+          "item": "Sweetened Fruit Juices or Smoothies",
+          "reason": "Often contain concentrated sugars that can cause rapid blood glucose spikes."
+        }
+      ],
+      "tip": "When dining at a guest house restaurant, don't hesitate to ask for simple, customized preparations like grilled protein and steamed vegetables."
+    },
+    {
+      "restaurant": "La Veranda Italian Cuisine",
+      "safeOrders": [
+        {
+          "dish": "Grilled Salmon or Chicken Breast with Roasted Vegetables",
+          "reason": "Provides healthy fats (salmon) or lean protein (chicken) and fiber from vegetables, supporting blood sugar control. Confirm no sugary glazes or peanut oil."
+        },
+        {
+          "dish": "Large Mixed Green Salad with Olive Oil and Vinegar Dressing",
+          "reason": "Rich in fiber and nutrients. Request dressing on the side to manage fat and sugar content."
+        },
+        {
+          "dish": "Minestrone Soup (confirm no pasta or added sugar)",
+          "reason": "A vegetable-rich soup can be a good starter, but ensure it's not loaded with pasta or other high-carb ingredients, and confirm no added sugar."
+        }
+      ],
+      "avoid": [
+        {
+          "item": "Creamy Pasta Dishes",
+          "reason": "High in refined carbohydrates and unhealthy fats, which can negatively impact blood sugar and cardiovascular health."
+        },
+        {
+          "item": "Sweetened Fruit Juices or Smoothies",
+          "reason": "Often contain concentrated sugars that can cause rapid blood glucose spikes."
+        }
+      ],
+      "tip": "When dining at an Italian restaurant, focus on grilled proteins and vegetable-based dishes. Always confirm ingredients and preparation methods to avoid hidden sugars and high-carb components."
+    }
+  ]
+}

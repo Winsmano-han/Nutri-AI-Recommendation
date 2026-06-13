@@ -8,7 +8,7 @@
  *   2. Searches Google Places API for restaurants within a configurable radius
  *   3. Classifies each restaurant into one of 10 Nigerian food archetypes
  *   4. Generates evidence-based restaurant seed terms → calls FastAPI model server
- *   5. Groq filters and explains recommendations against the user's clinical profile
+ *   5. Gemini filters and explains recommendations against the user's clinical profile
  *   6. Outputs recommendations_{timestamp}.json — ready for Flutter to consume
  *
  * Usage:
@@ -16,7 +16,7 @@
  *
  * Required env vars (add to .env in this folder):
  *   GOOGLE_MAPS_API_KEY   — same key the Flutter app uses
- *   GROQ_API_KEY          — free at https://console.groq.com
+ *   GEMINI_API_KEY        — free at https://aistudio.google.com
  *   MODEL_API_URL         — FastAPI server URL  (default: http://localhost:8000)
  *
  * Optional env vars:
@@ -1059,11 +1059,8 @@ async function main() {
   console.log(`   Profile    : conditions=[${USER_PROFILE.conditions}]  restrictions=[${USER_PROFILE.restrictions}]`);
   console.log("══════════════════════════════════════════════════════\n");
 
-  // Initialize LLM manager
-  const groqKeys = GROQ_API_KEY && GROQ_API_KEY !== "YOUR_KEY_HERE" ? [GROQ_API_KEY] : [];
+  // Initialize Gemini LLM
   const llmManager = new LLMProviderManager({
-    groqKeys,
-    groqModel: GROQ_MODEL,
     geminiKey: GEMINI_API_KEY,
     geminiModel: GEMINI_MODEL,
     timeout: LLM_TIMEOUT_MS,
@@ -1352,10 +1349,7 @@ async function main() {
   }
 
   const llmStats = llmManager.getStats();
-  console.log(`\n📊 LLM Provider Stats:`);
-  for (const provider of llmStats.providers) {
-    console.log(`   ${provider.id}: ${provider.callCount} calls (${provider.health.status})`);
-  }
+  console.log(`\n📊 LLM Provider: ${llmStats.provider.id} (${llmStats.totalCalls} calls, ${llmStats.provider.health.status})`);
 
   const output = {
     _meta: {
