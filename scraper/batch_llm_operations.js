@@ -88,7 +88,8 @@ export async function batchExplainRecommendations(
   archetypes,
   brandGuidanceBuilder,
   countryLabel,
-  contextTip
+  contextTip,
+  options = {}
 ) {
   const conditions = (userProfile?.conditions || []).join(", ") || "none";
   const restrictions = (userProfile?.restrictions || []).join(", ") || "none";
@@ -138,8 +139,8 @@ export async function batchExplainRecommendations(
 
     const brandGuidance = brandGuidanceBuilder(r.name, r.archetype);
 
-    const searchHint = r.modelRecs.length === 0 
-      ? `\n\nNOTE: You have access to real-time search. Since no model recommendations exist for "${r.name}", you may search for "${r.name} menu ${countryLabel}" or "${r.name} restaurant" to find actual menu items and make more accurate recommendations.`
+    const searchHint = options.enableGoogleSearch
+      ? `\n\nSEARCH GROUNDING: Google Search grounding is enabled for this call. If restaurant evidence is weak, use search only to verify the restaurant type or likely menu. Do not invent menu items if search does not provide evidence.`
       : "";
 
     return `RESTAURANT ${i + 1}:
@@ -196,7 +197,11 @@ Example format:
 Your response (JSON only):`;
 
   const messages = [{ role: "user", content: prompt }];
-  const response = await llmManager.chat(messages, { temperature: 0.1, maxTokens: 8000 });
+  const response = await llmManager.chat(messages, {
+    temperature: 0.1,
+    maxTokens: 8000,
+    googleSearch: Boolean(options.enableGoogleSearch),
+  });
 
   console.log(`  ✅ Batch explanation completed via ${response.provider} in ${(response.duration / 1000).toFixed(1)}s`);
 
@@ -233,6 +238,7 @@ Your response (JSON only):`;
     resultMap.set(restaurant.place_id, advice);
   }
 
+  resultMap.groundingMetadata = response.groundingMetadata || null;
   return resultMap;
 }
 

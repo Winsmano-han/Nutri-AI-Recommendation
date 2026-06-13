@@ -180,10 +180,18 @@ function recommendationCacheKey(payload) {
     lng: Number(payload.lng).toFixed(GEO_CACHE_DECIMALS),
     radius: Number(payload.radius ?? process.env.SEARCH_RADIUS ?? "2000"),
     maxRestaurants: normaliseMaxRestaurants(payload.maxRestaurants),
+    enableGeminiSearch: Boolean(payload.enableGeminiSearch),
+    skipLlmClassify: payload.skipLlmClassify !== false,
     userId: payload.userId || null,
     userProfile: normalizeUserProfile(payload.userProfile || { conditions: [], restrictions: [] }),
   };
   return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+function boolEnv(value, fallback = "0") {
+  if (value === true || value === "true" || value === "1" || value === 1) return "1";
+  if (value === false || value === "false" || value === "0" || value === 0) return "0";
+  return fallback;
 }
 
 function normaliseMaxRestaurants(value) {
@@ -249,7 +257,8 @@ async function runPipeline(payload) {
   if (payload.userId != null) env.USER_ID = String(payload.userId);
   env.MAX_RESTAURANTS = String(normaliseMaxRestaurants(payload.maxRestaurants));
   env.SKIP_GROQ_CLASSIFY = String(payload.skipGroqClassify ?? process.env.SKIP_GROQ_CLASSIFY ?? "1");
-  env.SKIP_LLM_CLASSIFY = String(payload.skipLlmClassify ?? process.env.SKIP_LLM_CLASSIFY ?? "1");
+  env.SKIP_LLM_CLASSIFY = boolEnv(payload.skipLlmClassify, process.env.SKIP_LLM_CLASSIFY ?? "1");
+  env.ENABLE_GEMINI_SEARCH = boolEnv(payload.enableGeminiSearch, process.env.ENABLE_GEMINI_SEARCH ?? "0");
   env.GROQ_TIMEOUT_MS = String(process.env.GROQ_TIMEOUT_MS || "15000");
   env.GROQ_MAX_RETRIES = String(process.env.GROQ_MAX_RETRIES || "1");
   env.GROQ_MAX_RETRY_WAIT_MS = String(process.env.GROQ_MAX_RETRY_WAIT_MS || "15000");
@@ -351,6 +360,7 @@ const server = http.createServer(async (req, res) => {
           cacheTtlMs: CACHE_TTL_MS,
           skipGroqClassifyDefault: process.env.SKIP_GROQ_CLASSIFY ?? "1",
           skipLlmClassifyDefault: process.env.SKIP_LLM_CLASSIFY ?? "1",
+          geminiSearchDefault: process.env.ENABLE_GEMINI_SEARCH ?? "0",
           pipelineTimeoutMs: PIPELINE_TIMEOUT_MS,
           groqTimeoutMs: parseInt(process.env.GROQ_TIMEOUT_MS || "15000", 10),
           groqMaxRetries: parseInt(process.env.GROQ_MAX_RETRIES || "1", 10),
@@ -388,6 +398,7 @@ const server = http.createServer(async (req, res) => {
         maxRestaurants: normaliseMaxRestaurants(body.maxRestaurants),
         skipGroqClassify: body.skipGroqClassify,
         skipLlmClassify: body.skipLlmClassify,
+        enableGeminiSearch: body.enableGeminiSearch,
       };
       const cacheKey = recommendationCacheKey(payload);
       const cached = getCachedRecommendation(cacheKey);

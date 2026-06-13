@@ -138,6 +138,9 @@ export function generateRestaurantSeeds({
   const text = [name, address, types, editorial, website, archetype, countryPack.archetypes?.[archetype]]
     .filter(Boolean)
     .join(" ");
+  const foodSignalText = [name, types, editorial, archetype, countryPack.archetypes?.[archetype]]
+    .filter(Boolean)
+    .join(" ");
 
   const evidence = [];
   const menuTerms = parseMenuTerms(menuText);
@@ -162,7 +165,7 @@ export function generateRestaurantSeeds({
     }));
   }
 
-  const metadata = metadataTerms(text);
+  const metadata = metadataTerms(foodSignalText);
   if (metadata.length) {
     evidence.push(scoreEvidence({
       source: "google_metadata",

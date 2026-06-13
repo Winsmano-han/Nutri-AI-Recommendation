@@ -76,6 +76,8 @@ const GOOGLE_TIMEOUT_MS = parseInt(process.env.GOOGLE_TIMEOUT_MS || "20000", 10)
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || "45000", 10);
 const MODEL_TIMEOUT_MS = parseInt(process.env.MODEL_TIMEOUT_MS || "20000", 10);
 const ENABLE_BATCH_MODE = process.env.ENABLE_BATCH_MODE !== "0"; // Default ON
+const SKIP_LLM_CLASSIFY = process.env.SKIP_LLM_CLASSIFY !== "0"; // Default ON: unknown is safer than bad cuisine guesses
+const ENABLE_GEMINI_SEARCH = process.env.ENABLE_GEMINI_SEARCH === "1";
 
 // Default coords: Ibadan city center (University of Ibadan area)
 const USER_LAT      = parseFloat(process.env.USER_LAT  || "7.3775");
@@ -1062,6 +1064,7 @@ async function main() {
     geminiKey: GEMINI_API_KEY,
     geminiModel: GEMINI_MODEL,
     timeout: LLM_TIMEOUT_MS,
+    enableGoogleSearch: ENABLE_GEMINI_SEARCH,
   });
   console.log();
 
@@ -1163,7 +1166,12 @@ async function main() {
     }
   }
   
-  if (needsLLMClassification.length > 0 && ENABLE_BATCH_MODE) {
+  if (needsLLMClassification.length > 0 && SKIP_LLM_CLASSIFY) {
+    console.log(`\n  ↪ ${needsLLMClassification.length} ambiguous restaurants set to ${COUNTRY_PACK.unknownArchetype} (SKIP_LLM_CLASSIFY=1)`);
+    for (const restaurant of needsLLMClassification) {
+      archetypeMap.set(restaurant.place_id, COUNTRY_PACK.unknownArchetype);
+    }
+  } else if (needsLLMClassification.length > 0 && ENABLE_BATCH_MODE) {
     console.log(`\n  🤖 Batch classifying ${needsLLMClassification.length} ambiguous restaurants via LLM…`);
     const batchClassifications = await batchClassifyRestaurants(
       llmManager,
@@ -1243,7 +1251,8 @@ async function main() {
       ARCHETYPES,
       buildBrandGuidanceBlock,
       countryLabel,
-      contextTip
+      contextTip,
+      { enableGoogleSearch: ENABLE_GEMINI_SEARCH }
     );
   } else {
     // Sequential Gemini fallback: keep one LLM call per restaurant without using
@@ -1257,7 +1266,8 @@ async function main() {
         ARCHETYPES,
         buildBrandGuidanceBlock,
         countryLabel,
-        contextTip
+        contextTip,
+        { enableGoogleSearch: ENABLE_GEMINI_SEARCH }
       );
       adviceMap.set(
         restaurant.place_id,
@@ -1378,6 +1388,8 @@ async function main() {
       failures,
       modelServerUsed: modelServerUp,
       batchMode:       ENABLE_BATCH_MODE,
+      geminiSearchEnabled: ENABLE_GEMINI_SEARCH,
+      groundingMetadata: adviceMap.groundingMetadata || null,
       llmStats:        llmStats,
     },
     venues,

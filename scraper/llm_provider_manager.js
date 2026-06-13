@@ -12,6 +12,7 @@ class LLMProviderManager {
   constructor(config = {}) {
     this.defaultTimeout = config.timeout || 45000;
     this.maxRetries = config.maxRetries || 3;
+    this.enableGoogleSearch = config.enableGoogleSearch || false;
 
     if (!config.geminiKey || config.geminiKey === "YOUR_KEY_HERE") {
       throw new Error("Gemini API key is required");
@@ -31,7 +32,7 @@ class LLMProviderManager {
       rateLimitUntil: null,
     };
 
-    console.log(`✅ Gemini LLM initialized: ${this.provider.model}`);
+    console.log(`✅ Gemini LLM initialized: ${this.provider.model}${this.enableGoogleSearch ? " + Google Search grounding" : ""}`);
   }
 
   isHealthy() {
@@ -90,6 +91,10 @@ class LLMProviderManager {
       body.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
 
+    if (options.googleSearch || this.enableGoogleSearch) {
+      body.tools = [{ google_search: {} }];
+    }
+
     const url = `${GEMINI_API_URL}/${this.provider.model}:generateContent?key=${this.provider.apiKey}`;
 
     const response = await fetch(url, {
@@ -112,7 +117,11 @@ class LLMProviderManager {
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const candidate = data.candidates?.[0] || {};
+    return {
+      text: candidate.content?.parts?.[0]?.text || "",
+      groundingMetadata: candidate.groundingMetadata || null,
+    };
   }
 
   async chat(messages, options = {}) {
@@ -123,12 +132,13 @@ class LLMProviderManager {
     try {
       this.provider.callCount++;
       const startTime = Date.now();
-      const content = await this.callGemini(messages, options);
+      const result = await this.callGemini(messages, options);
       const duration = Date.now() - startTime;
       this.markHealthy();
 
       return {
-        content,
+        content: result.text,
+        groundingMetadata: result.groundingMetadata,
         provider: this.provider.id,
         duration,
       };
@@ -147,8 +157,9 @@ class LLMProviderManager {
         type: this.provider.type,
         model: this.provider.model,
         callCount: this.provider.callCount,
-        health: this.health,
-      },
+          health: this.health,
+          googleSearchEnabled: this.enableGoogleSearch,
+        },
       totalCalls: this.provider.callCount,
     };
   }
