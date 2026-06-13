@@ -59,7 +59,6 @@ if (fs.existsSync(envPath)) {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-const GROQ_API_KEY        = process.env.GROQ_API_KEY;
 const GEMINI_API_KEY      = process.env.GEMINI_API_KEY;
 const MODEL_API_URL       = (process.env.MODEL_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
@@ -67,12 +66,11 @@ if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === "YOUR_KEY_HERE") {
   console.error("❌  GOOGLE_MAPS_API_KEY is not set. Add it to .env");
   process.exit(1);
 }
-if ((!GROQ_API_KEY || GROQ_API_KEY === "YOUR_KEY_HERE") && (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_KEY_HERE")) {
-  console.error("❌  At least one LLM API key (GROQ_API_KEY or GEMINI_API_KEY) must be set");
+if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_KEY_HERE") {
+  console.error("❌  GEMINI_API_KEY is required. Add it to .env");
   process.exit(1);
 }
 
-const GROQ_MODEL   = "llama-3.3-70b-versatile";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GOOGLE_TIMEOUT_MS = parseInt(process.env.GOOGLE_TIMEOUT_MS || "20000", 10);
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || "45000", 10);
