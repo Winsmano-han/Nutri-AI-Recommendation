@@ -5,6 +5,7 @@ import path from "path";
 import dns from "dns";
 import { fileURLToPath } from "url";
 import { saveUserContract, contractStoreInfo } from "./contract_store.js";
+import { LLMProviderManager } from "./llm_provider_manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dns.setDefaultResultOrder("ipv4first");
@@ -26,17 +27,11 @@ function loadDotEnv() {
 
 loadDotEnv();
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 const CONTRACT_PATH = path.join(__dirname, "nutrition_contract.json");
 const CANADA_CONTRACT_PATH = path.join(__dirname, "nutrition_contract_canada.json");
-
-if (!GROQ_API_KEY || GROQ_API_KEY === "YOUR_KEY_HERE") {
-  console.error("❌ GROQ_API_KEY is not set.");
-  process.exit(1);
-}
 
 async function extractTextFromReport(filePath) {
   const ext = path.extname(filePath).toLowerCase();
@@ -92,35 +87,23 @@ async function parseReportToContract(reportText, userId, country = "NG") {
     .replace("{{timestamp}}", timestamp.replace(/[:.]/g, "-"))
     .replace("{{current ISO timestamp}}", timestamp);
 
-  let response;
+  let content;
   try {
-    response = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        temperature: 0,
-        max_tokens: 2500,
-        messages: [
-          { role: "system", content: parsingConfig.systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-      signal: AbortSignal.timeout(parseInt(process.env.GROQ_TIMEOUT_MS || "45000", 10)),
+    const llm = new LLMProviderManager({
+      geminiKey: GEMINI_API_KEY,
+      geminiModel: GEMINI_MODEL,
+      timeout: parseInt(process.env.LLM_TIMEOUT_MS || "45000", 10),
     });
+    const response = await llm.chat([
+      { role: "system", content: parsingConfig.systemPrompt },
+      { role: "user", content: userPrompt },
+    ], { temperature: 0, maxTokens: 2500 });
+    content = response.content;
   } catch (err) {
-    throw new Error(`Groq report parsing fetch failed for ${GROQ_API_URL}: ${err.message}`);
+    throw new Error(`Gemini report parsing failed: ${err.message || err}`);
   }
 
-  if (!response.ok) {
-    throw new Error(`Groq parsing failed: HTTP ${response.status} ${await response.text()}`);
-  }
-
-  const data = await response.json();
-  const rawText = data.choices?.[0]?.message?.content || "{}";
+  const rawText = content || "{}";
   const cleaned = rawText.replace(/```json|```/g, "").trim();
 
   try {

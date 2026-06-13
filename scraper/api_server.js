@@ -249,6 +249,7 @@ async function runPipeline(payload) {
   if (payload.userId != null) env.USER_ID = String(payload.userId);
   env.MAX_RESTAURANTS = String(normaliseMaxRestaurants(payload.maxRestaurants));
   env.SKIP_GROQ_CLASSIFY = String(payload.skipGroqClassify ?? process.env.SKIP_GROQ_CLASSIFY ?? "1");
+  env.SKIP_LLM_CLASSIFY = String(payload.skipLlmClassify ?? process.env.SKIP_LLM_CLASSIFY ?? "1");
   env.GROQ_TIMEOUT_MS = String(process.env.GROQ_TIMEOUT_MS || "15000");
   env.GROQ_MAX_RETRIES = String(process.env.GROQ_MAX_RETRIES || "1");
   env.GROQ_MAX_RETRY_WAIT_MS = String(process.env.GROQ_MAX_RETRY_WAIT_MS || "15000");
@@ -349,6 +350,7 @@ const server = http.createServer(async (req, res) => {
           geoCacheDecimals: GEO_CACHE_DECIMALS,
           cacheTtlMs: CACHE_TTL_MS,
           skipGroqClassifyDefault: process.env.SKIP_GROQ_CLASSIFY ?? "1",
+          skipLlmClassifyDefault: process.env.SKIP_LLM_CLASSIFY ?? "1",
           pipelineTimeoutMs: PIPELINE_TIMEOUT_MS,
           groqTimeoutMs: parseInt(process.env.GROQ_TIMEOUT_MS || "15000", 10),
           groqMaxRetries: parseInt(process.env.GROQ_MAX_RETRIES || "1", 10),
@@ -385,6 +387,7 @@ const server = http.createServer(async (req, res) => {
         userProfile: normalizeUserProfile(body.userProfile || { conditions: [], restrictions: [] }),
         maxRestaurants: normaliseMaxRestaurants(body.maxRestaurants),
         skipGroqClassify: body.skipGroqClassify,
+        skipLlmClassify: body.skipLlmClassify,
       };
       const cacheKey = recommendationCacheKey(payload);
       const cached = getCachedRecommendation(cacheKey);

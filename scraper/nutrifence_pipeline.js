@@ -1246,16 +1246,28 @@ async function main() {
       contextTip
     );
   } else {
-    // Sequential fallback
+    // Sequential Gemini fallback: keep one LLM call per restaurant without using
+    // the removed Groq-specific explainer path.
     for (const restaurant of restaurantData) {
-      const advice = await explainWithGroq(
-        restaurant.name,
-        restaurant.archetype,
-        restaurant.modelRecs,
+      const singleAdvice = await batchExplainRecommendations(
+        llmManager,
+        [restaurant],
         USER_PROFILE,
-        activeContractData
+        nutritionBlock,
+        ARCHETYPES,
+        buildBrandGuidanceBlock,
+        countryLabel,
+        contextTip
       );
-      adviceMap.set(restaurant.place_id, advice);
+      adviceMap.set(
+        restaurant.place_id,
+        singleAdvice.get(restaurant.place_id) || {
+          safeOrders: [],
+          avoid: [],
+          tip: null,
+          confidenceNote: "Could not generate structured advice for this venue.",
+        }
+      );
     }
   }
 
