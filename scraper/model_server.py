@@ -93,19 +93,33 @@ def load_models():
     else:
         log.warning(f"  ⚠️  Dish model not found at {DISH_MODEL_PATH} — /recommend will return []")
 
-    if os.path.exists(CANADA_DISH_MODEL_PATH):
-        log.info(f"Loading Canada dish model from {CANADA_DISH_MODEL_PATH}…")
-        models["dish_ca"] = joblib.load(CANADA_DISH_MODEL_PATH)
+    ca_gz_path = CANADA_DISH_MODEL_PATH + ".gz"
+    if os.path.exists(ca_gz_path):
+        log.info(f"Loading Canada dish model from compressed {ca_gz_path}...")
+        import gzip
+        with gzip.open(ca_gz_path, "rb") as f:
+            models["dish_ca"] = joblib.load(f)
         loaded.append("dish_model_ca")
-        log.info("  ✅ Canada dish model loaded")
+        log.info("  Canada dish model loaded (decompressed)")
         try:
             dish_df = getattr(models["dish_ca"], "dish_df", None)
             if dish_df is not None and hasattr(dish_df, "columns"):
-                log.info(f"  ℹ️ Canada dish artifact rows: {len(dish_df)}")
+                log.info(f"  Canada dish artifact rows: {len(dish_df)}")
         except Exception as e:
-            log.warning(f"  ⚠️ Could not inspect Canada dish artifact: {e}")
+            log.warning(f"  Could not inspect Canada dish artifact: {e}")
+    elif os.path.exists(CANADA_DISH_MODEL_PATH):
+        log.info(f"Loading Canada dish model from {CANADA_DISH_MODEL_PATH}...")
+        models["dish_ca"] = joblib.load(CANADA_DISH_MODEL_PATH)
+        loaded.append("dish_model_ca")
+        log.info("  Canada dish model loaded")
+        try:
+            dish_df = getattr(models["dish_ca"], "dish_df", None)
+            if dish_df is not None and hasattr(dish_df, "columns"):
+                log.info(f"  Canada dish artifact rows: {len(dish_df)}")
+        except Exception as e:
+            log.warning(f"  Could not inspect Canada dish artifact: {e}")
     else:
-        log.warning(f"  ⚠️  Canada dish model not found at {CANADA_DISH_MODEL_PATH} — country=CA will fall back if possible")
+        log.warning(f"  Canada dish model not found at {CANADA_DISH_MODEL_PATH} or {ca_gz_path} -- country=CA will fall back if possible")
 
     if os.path.exists(FOOD_MODEL_PATH):
         log.info(f"Loading food model from {FOOD_MODEL_PATH}…")
