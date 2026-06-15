@@ -1293,6 +1293,12 @@ async function main() {
   // ── Step 4: Generate seeds and get model recommendations ──
   console.log("\n🌱 Step 4: Generating seeds and fetching model recommendations…\n");
   
+  // Check if we should skip model for this country
+  const skipModelForCountry = USER_COUNTRY === "CA" && process.env.SKIP_CANADA_MODEL === "1";
+  if (skipModelForCountry) {
+    console.log("  ⚠️  Skipping model server for Canada (SKIP_CANADA_MODEL=1) — will use AI-only recommendations\n");
+  }
+  
   const restaurantData = [];
   const unknownRestaurants = []; // Collect ALL unknown archetypes for AI seed generation
   
@@ -1323,7 +1329,8 @@ async function main() {
     console.log(`  🌱 Seeds: ${seedInfo.seedSource} (conf: ${seedInfo.seedConfidence.toFixed(2)}, ${seedInfo.seedTerms.length} terms)`);
     
     let modelRecs = [];
-    if (modelServerUp && !shouldSkipModelForArchetype(archetype)) {
+    // Skip model entirely if skipModelForCountry is true
+    if (!skipModelForCountry && modelServerUp && !shouldSkipModelForArchetype(archetype)) {
       try {
         modelRecs = await getModelRecommendations(seedInfo.seedTerms, USER_PROFILE.conditions || []);
         modelRecs = filterModelRecommendationsForArchetype(archetype, modelRecs);
@@ -1331,6 +1338,8 @@ async function main() {
       } catch (e) {
         console.warn(`  ⚠️  Model error: ${e.message}`);
       }
+    } else if (skipModelForCountry) {
+      console.log(`  🤖 Model: skipped (AI-only mode)`);
     }
     
     restaurantData.push({

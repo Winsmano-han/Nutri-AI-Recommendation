@@ -21,4 +21,6 @@ services:
         value: http://127.0.0.1:8011
       - key: API_HOST
         value: 0.0.0.0
+      - key: SKIP_CANADA_MODEL
+        value: "1"
     healthCheckPath: /health
