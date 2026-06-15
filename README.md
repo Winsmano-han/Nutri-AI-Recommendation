@@ -19,6 +19,35 @@ Given a user location and profile:
 
 ---
 
+## Recent Updates (June 2026)
+
+### Fixed: Repetitive Recommendations Issue
+- **Problem**: All restaurants were getting identical "grilled chicken" or "grilled fish" recommendations
+- **Root Cause**: Seed generator was injecting these terms everywhere through brand profiles, metadata rules, and country priors
+- **Solution**: 
+  - Removed "grilled chicken/fish" from all seed generation sources
+  - Made seeds archetype-specific (pizza place → pizza, shawarma spot → shawarma)
+  - Added fallback diversity rules to prevent generic recommendations
+  - Implemented AI-powered seed inference for unknown restaurant types
+
+### Model Version Upgrade
+- **Upgraded**: scikit-learn 1.8.0 → 1.9.0
+- **Action**: Retrained all 3 models with latest sklearn version:
+  - `recommender_nigeria_dishes_v3_weighted.joblib` (545 dishes)
+  - `recommender_canada_dishes_cnf_2026.joblib` (5,647 dishes)
+  - `recommender_nigeria.joblib` (food/ingredient model)
+- **Result**: No version mismatch warnings, stable model loading
+
+### AI-Enhanced Unknown Restaurant Handling
+- **New Feature**: When a restaurant can't be classified into a known archetype, the system now:
+  1. Tries name etymology patterns ("Mama X" → local canteen, "Grill House" → suya spot)
+  2. Uses Gemini AI to infer 5-8 likely menu items from the restaurant name and Google metadata
+  3. Feeds AI-inferred seeds to the dish recommendation model
+- **Impact**: Unknown restaurants now get 6-10 specific recommendations instead of generic fallbacks
+- **Efficiency**: All unknown restaurants processed in ONE batch AI call
+
+---
+
 ## Repository Structure
 
 - `best_models_bundle/`

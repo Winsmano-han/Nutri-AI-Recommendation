@@ -37,6 +37,9 @@ Return ONLY a valid JSON object (not an array) mapping place_id to archetype key
 Do not include markdown code fences.
 Do not include any explanatory text.
 
+CRITICAL: Choose the archetype that BEST matches each restaurant based on name, types, and description.
+Do not default everything to the same archetype.
+
 Example format:
 {
   "place_id_123": "archetype_key",
@@ -175,6 +178,12 @@ CRITICAL RULES:
 - Active health filters: ${hasActiveHealthFilters ? "yes" : "no"}
 - If no active filters, don't behave like strict therapeutic diet
 - If no active filters, pizza/shawarma/rice are NOT automatically avoid items
+- **DIVERSITY IS CRITICAL**: Each restaurant should have DIFFERENT recommendations based on its actual type and model suggestions
+- DO NOT use "grilled chicken" or "grilled fish" as generic fallbacks across all restaurants
+- Prioritize dishes from the model recommendations list when they are safe
+- Only suggest grilled proteins if they appear in the model recommendations OR are clearly typical for that specific restaurant archetype
+- A pizza place should NOT recommend grilled fish; a suya spot should NOT recommend vegetable pizza
+- Make recommendations specific to each restaurant's cuisine and archetype
 ${age && age >= 65 ? `- User is senior (${age}): prioritize nutrient-dense foods, moderate portions, adequate protein` : ""}
 ${age && age < 30 && activityLevel?.toLowerCase().includes("active") ? `- User is young/active (${age}, ${activityLevel}): adequate protein and energy, respect restrictions` : ""}
 

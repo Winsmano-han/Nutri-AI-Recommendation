@@ -161,6 +161,79 @@ const ARCHETYPE_SEEDS = COUNTRY_PACK.archetypeSeeds;
 // In-memory cache: placeId → archetype (avoids reclassifying same venue twice)
 const archetypeCache = new Map();
 
+// ─── AI Seed Generation for Unknown Restaurants ────────────────────────
+
+async function generateAISeedsForUnknown(llmManager, restaurants, country) {
+  const countryLabel = country === "CA" ? "Canadian" : "Nigerian";
+  
+  const restaurantList = restaurants
+    .map((r, i) => {
+      const types = (r.types || []).join(", ");
+      const editorial = r.editorial ? `\nDescription: ${r.editorial}` : "";
+      return `${i + 1}. place_id: ${r.placeId}\n   Name: "${r.name}"\n   Google Types: ${types}${editorial}`;
+    })
+    .join("\n\n");
+  
+  const prompt = `You are analyzing ${restaurants.length} ${countryLabel} restaurant(s) with ambiguous names or limited metadata.
+
+RESTAURANTS:
+${restaurantList}
+
+TASK:
+For EACH restaurant, infer 5-8 likely menu items based on:
+- Restaurant name cultural/functional signals
+- Google types
+- Description (if available)
+- ${countryLabel} food culture
+
+RULES:
+- Return SPECIFIC dish names, not categories (e.g., "jollof rice" not "rice dishes")
+- Focus on common, widely available items for that venue type
+- Avoid generic terms like "grilled chicken" unless clearly appropriate
+- For local canteens: prioritize swallows, soups, rice dishes
+- For unknown spots: infer from name patterns (e.g., "Mama X" = local food)
+
+RETURN FORMAT (JSON object, not array):
+{
+  "place_id_1": ["dish1", "dish2", "dish3", "dish4", "dish5"],
+  "place_id_2": ["dish1", "dish2", "dish3", "dish4", "dish5"]
+}
+
+Do not include markdown code fences or explanatory text. Return ONLY the JSON object.`;
+  
+  const messages = [{ role: "user", content: prompt }];
+  const response = await llmManager.chat(messages, { temperature: 0.3, maxTokens: 1500 });
+  
+  let parsed;
+  try {
+    // More aggressive cleaning
+    let cleaned = response.content.trim();
+    // Remove markdown code fences
+    cleaned = cleaned.replace(/```(?:json)?\n?/g, "").replace(/```/g, "");
+    // Remove any text before first { and after last }
+    const jsonStart = cleaned.indexOf("{");
+    const jsonEnd = cleaned.lastIndexOf("}");
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+    }
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    console.warn(`  ⚠️  Failed to parse AI seed response: ${err.message}`);
+    console.warn(`  Raw response: ${response.content.substring(0, 200)}...`);
+    return new Map();
+  }
+  
+  const resultMap = new Map();
+  for (const restaurant of restaurants) {
+    const seeds = parsed[restaurant.placeId];
+    if (Array.isArray(seeds) && seeds.length > 0) {
+      resultMap.set(restaurant.placeId, seeds.map(s => String(s).toLowerCase().trim()).filter(Boolean));
+    }
+  }
+  
+  return resultMap;
+}
+
 // ─── Nutrition contract helpers ───────────────────────────────────────────────
 
 async function loadActiveContract(userProfile) {
@@ -549,51 +622,48 @@ function getBrandGuidance(restaurantName, archetype) {
       match: /\bdomino'?s?\b|pizza hut|pizza pizza/,
       label: "pizza_chain",
       likelySafe: [
-        "small or medium thin-crust vegetable pizza",
-        "chicken pizza with extra vegetables and less cheese",
+        "thin-crust vegetable or chicken pizza in a moderate portion",
         "side salad if available",
         "water instead of soda",
       ],
-      likelyAvoid: ["extra cheese", "large pizza portions", "cheesy bread", "sugary drinks"],
-      note: "For users with no active conditions, pizza can be a safe order when portion size is controlled and vegetables are added.",
+      likelyAvoid: ["extra cheese", "large portions", "stuffed crust", "sugary drinks"],
+      note: "Focus on thin crust with vegetable toppings and portion control.",
     },
     {
       match: /\bkfc\b/,
       label: "fried_chicken_chain",
       likelySafe: [
-        "grilled chicken if available",
-        "skinless chicken pieces in a small portion",
-        "coleslaw or salad if available",
+        "grilled chicken if available, otherwise skinless pieces in small portions",
+        "coleslaw or green beans if available",
         "water instead of soda",
       ],
-      likelyAvoid: ["fried chicken bucket", "large fries", "sugary drinks", "creamy dips"],
-      note: "If grilled chicken is unavailable, recommend smaller portions and vegetable sides rather than pretending a full menu is known.",
+      likelyAvoid: ["fried chicken bucket or large portions", "biscuits", "sugary drinks", "creamy sauces"],
+      note: "If grilled is unavailable, recommend smaller portions with vegetable sides.",
     },
     {
       match: /chicken republic|mr bigg|tastee|tantalizer|sweet sensation/,
       label: "nigerian_fast_food_chain",
       likelySafe: [
-        "grilled chicken if available",
-        "rice with grilled chicken in a moderate portion",
-        "moi moi if available",
-        "coleslaw or vegetable side",
-        "water instead of sugary drinks",
+        "jollof rice with grilled or rotisserie chicken in moderate portions",
+        "fried rice with vegetable sides",
+        "moi moi",
+        "coleslaw",
+        "water or zobo without added sugar",
       ],
-      likelyAvoid: ["fried chicken", "large rice portions", "meat pie or pastries", "sugary drinks"],
-      note: "For users with no active conditions, rice meals are acceptable in moderate portions, especially with lean protein and vegetables.",
+      likelyAvoid: ["fried chicken", "large rice portions", "meat pie", "sugary drinks"],
+      note: "These chains often have rice-based meals; prioritize grilled protein and moderate portions.",
     },
     {
-      match: /shawarma|pizzadey|pizza|wrap/,
-      label: "pizza_shawarma_spot",
+      match: /shawarma|pizzadey|wrap/,
+      label: "shawarma_pizza_spot",
       likelySafe: [
         "chicken shawarma with extra vegetables and light sauce",
-        "vegetable pizza in a moderate portion",
-        "chicken pizza with less cheese",
+        "vegetable or chicken pizza in moderate portions",
         "grilled chicken if available",
         "water instead of soda",
       ],
-      likelyAvoid: ["extra mayonnaise", "extra cheese", "large portions", "fries and sugary drink combo"],
-      note: "For users with no active conditions, do not avoid shawarma or pizza categorically; recommend portion and sauce modifications.",
+      likelyAvoid: ["extra mayonnaise or creamy sauces", "extra cheese", "large portions", "fries combo"],
+      note: "Shawarma and pizza can work with sauce/portion modifications.",
     },
   ];
 
@@ -606,9 +676,17 @@ function getBrandGuidance(restaurantName, archetype) {
   if (archetype === "fast_food_western" || archetype === "canadian_fast_food") {
     return {
       label: "generic_fast_food",
-      likelySafe: ["grilled protein if available", "vegetable side or salad", "smaller portion of main item", "water instead of soda"],
-      likelyAvoid: ["large fried sides", "sugary drinks", "extra creamy sauces", "oversized portions"],
-      note: "Use realistic fast-food modifications instead of recommending unrelated local dishes.",
+      likelySafe: ["smaller portions with vegetable sides", "water instead of soda"],
+      likelyAvoid: ["large fried sides", "sugary drinks", "extra sauces"],
+      note: "Use realistic fast-food modifications instead of generic recommendations.",
+    };
+  }
+  if (archetype === "local_canteen") {
+    return {
+      label: "nigerian_local",
+      likelySafe: ["vegetable soup with whole grain swallow", "beans porridge", "boiled or grilled proteins"],
+      likelyAvoid: ["excessive oil in soups", "refined swallows like eba or semovita", "fried proteins"],
+      note: "Local canteens often offer traditional Nigerian dishes; prioritize whole grains and boiled/grilled preparations.",
     };
   }
 
@@ -988,27 +1066,43 @@ function makeUnknownAdviceSafer(advice, archetype) {
 }
 
 function fallbackSafeOrders(archetype) {
-  const fallbackByCountry = USER_COUNTRY === "CA"
+  // Only use fallbacks when absolutely necessary - LLM should provide recommendations
+  // Fallbacks are now more diverse and archetype-specific
+  const nigerianLocalFallback = [
+    { dish: "Ask if available: vegetable soup with whole grain swallow", reason: "It provides vegetables and fibre when prepared with minimal oil.", source: "ai_knowledge" },
+    { dish: "Ask if available: beans porridge", reason: "It is a high-fibre, plant-based protein option aligned with FBDG guidance.", source: "ai_knowledge" },
+    { dish: "Ask if available: water or zobo without added sugar", reason: "It avoids sugary drinks and supports the active nutrition guidance.", source: "ai_knowledge" },
+  ];
+
+  const fastFoodFallback = USER_COUNTRY === "CA"
     ? [
-        { dish: "Ask if available: grilled chicken or fish with vegetables", reason: "It is a lean protein option with vegetables and can fit the active nutrition guidance when prepared without sugary sauces.", source: "ai_knowledge" },
-        { dish: "Ask if available: salad or vegetables with dressing on the side", reason: "It increases vegetable intake and helps reduce excess sodium, sugar, and saturated fat from sauces.", source: "ai_knowledge" },
-        { dish: "Ask if available: water or unsweetened tea", reason: "It avoids sugary drinks and aligns with Canada's Food Guide.", source: "ai_knowledge" },
+        { dish: "Ask if available: side salad with dressing on the side", reason: "It increases vegetable intake and helps control sodium and fat from sauces.", source: "ai_knowledge" },
+        { dish: "Ask if available: grilled protein if offered", reason: "It is a leaner cooking method than fried options when available.", source: "ai_knowledge" },
+        { dish: "Ask if available: water or unsweetened tea", reason: "It avoids sugary drinks and aligns with nutrition guidance.", source: "ai_knowledge" },
       ]
     : [
-        { dish: "Ask if available: grilled fish or grilled chicken", reason: "It is a leaner protein choice when prepared with little oil and no sugary sauce.", source: "ai_knowledge" },
-        { dish: "Ask if available: vegetable soup or salad", reason: "It adds vegetables and fibre while avoiding fried sides.", source: "ai_knowledge" },
-        { dish: "Ask if available: water instead of sugary drinks", reason: "It avoids added sugar and supports the active nutrition guidance.", source: "ai_knowledge" },
+        { dish: "Ask if available: coleslaw or vegetable side", reason: "It adds vegetables while avoiding fried sides.", source: "ai_knowledge" },
+        { dish: "Ask if available: smaller portion of main item", reason: "It helps control carbohydrate and calorie intake.", source: "ai_knowledge" },
+        { dish: "Ask if available: water instead of soft drinks", reason: "It avoids added sugar and supports the active nutrition guidance.", source: "ai_knowledge" },
       ];
 
-  if (archetype === "fast_food_western" || archetype === "canadian_fast_food") {
+  if (archetype === "fast_food_western" || archetype === "canadian_fast_food" || archetype === "fast_food_nigerian") {
+    return fastFoodFallback;
+  }
+  
+  if (archetype === "local_canteen" || archetype === "unknown") {
+    return nigerianLocalFallback;
+  }
+  
+  if (archetype === "suya_grill") {
     return [
-      { dish: "Grilled Chicken", reason: "It is generally a safer lean-protein option than fried chicken when available and ordered without sugary sauces.", source: "ai_knowledge" },
-      { dish: "Side Salad", reason: "It adds vegetables and fibre and is safer than fries when dressing is served on the side.", source: "ai_knowledge" },
-      { dish: "Water", reason: "It avoids sugary drinks and supports low-sugar guidance.", source: "ai_knowledge" },
+      { dish: "Ask if available: grilled protein with minimal sauce", reason: "It reduces added oil and sodium when sauce is served on the side.", source: "ai_knowledge" },
+      { dish: "Ask if available: yaji spice on the side", reason: "It allows control over sodium and spice level.", source: "ai_knowledge" },
+      { dish: "Ask if available: water or fresh juice", reason: "It supports hydration without added sugar.", source: "ai_knowledge" },
     ];
   }
 
-  return fallbackByCountry;
+  return USER_COUNTRY === "CA" ? fastFoodFallback : nigerianLocalFallback;
 }
 
 function normaliseAdviceShape(advice, archetype) {
@@ -1016,12 +1110,16 @@ function normaliseAdviceShape(advice, archetype) {
   const avoid = Array.isArray(advice.avoid) ? advice.avoid : [];
   const existing = new Set(safeOrders.map((item) => String(item.dish || "").toLowerCase()));
 
-  for (const item of fallbackSafeOrders(archetype)) {
-    if (safeOrders.length >= 3) break;
-    const key = String(item.dish || "").toLowerCase();
-    if (!existing.has(key)) {
-      safeOrders.push(item);
-      existing.add(key);
+  // Only add fallbacks if LLM returned absolutely nothing (< 2 items)
+  // This prevents overriding LLM's specific recommendations
+  if (safeOrders.length < 2) {
+    for (const item of fallbackSafeOrders(archetype)) {
+      if (safeOrders.length >= 3) break;
+      const key = String(item.dish || "").toLowerCase();
+      if (!existing.has(key)) {
+        safeOrders.push(item);
+        existing.add(key);
+      }
     }
   }
 
@@ -1196,6 +1294,8 @@ async function main() {
   console.log("\n🌱 Step 4: Generating seeds and fetching model recommendations…\n");
   
   const restaurantData = [];
+  const unknownRestaurants = []; // Collect ALL unknown archetypes for AI seed generation
+  
   for (const [placeId, data] of placeDetailsMap) {
     const archetype = archetypeMap.get(placeId) || COUNTRY_PACK.unknownArchetype;
     
@@ -1205,6 +1305,18 @@ async function main() {
       country: USER_COUNTRY,
       maxTerms: 10,
     });
+    
+    // If archetype is unknown, ALWAYS mark for AI enhancement
+    const isUnknown = archetype === COUNTRY_PACK.unknownArchetype || archetype === "unknown";
+    if (isUnknown) {
+      unknownRestaurants.push({
+        placeId,
+        name: data.details.name,
+        types: data.details.types,
+        editorial: data.details.editorial_summary?.overview,
+        seedInfo,
+      });
+    }
     
     console.log(`[${data.details.name}]`);
     console.log(`  🏷️  ${archetype}`);
@@ -1230,6 +1342,38 @@ async function main() {
       seedInfo,
       modelRecs: modelRecs.slice(0, 15),
     });
+  }
+  
+  // AI-enhance seeds for ALL unknown restaurants in ONE batch call
+  if (unknownRestaurants.length > 0) {
+    console.log(`\n  🧠 Enhancing ${unknownRestaurants.length} unknown restaurant(s) with AI seed generation…`);
+    try {
+      const aiSeeds = await generateAISeedsForUnknown(llmManager, unknownRestaurants, USER_COUNTRY);
+      // Update seedInfo for restaurants that got AI-enhanced seeds
+      for (const [placeId, enhancedSeeds] of aiSeeds) {
+        const restaurant = restaurantData.find(r => r.place_id === placeId);
+        if (restaurant && enhancedSeeds.length > 0) {
+          // Replace existing seeds with AI seeds (they're more venue-specific)
+          restaurant.seedInfo.seedTerms = enhancedSeeds.slice(0, 10);
+          restaurant.seedInfo.seedSource = "ai_inference";
+          restaurant.seedInfo.seedConfidence = 0.75;
+          console.log(`  ✓ ${restaurant.name}: ${enhancedSeeds.length} AI-inferred seeds`);
+          
+          // Re-run model with AI seeds if model server is up
+          if (modelServerUp && !shouldSkipModelForArchetype(restaurant.archetype)) {
+            try {
+              const newRecs = await getModelRecommendations(enhancedSeeds.slice(0, 10), USER_PROFILE.conditions || []);
+              restaurant.modelRecs = filterModelRecommendationsForArchetype(restaurant.archetype, newRecs).slice(0, 15);
+              console.log(`    → Model re-run: ${restaurant.modelRecs.length} dishes`);
+            } catch (e) {
+              // Keep original model recs if enhancement fails
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`  ⚠️  AI seed generation failed: ${e.message}`);
+    }
   }
 
   // ── Step 5: Batch explain recommendations (1 LLM call) ──

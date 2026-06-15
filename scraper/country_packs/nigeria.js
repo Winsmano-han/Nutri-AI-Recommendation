@@ -12,16 +12,16 @@ const archetypes = {
 };
 
 const archetypeSeeds = {
-  fast_food_nigerian:   ["jollof rice chicken", "fried rice coleslaw", "puff puff chips", "grilled chicken wings"],
-  fast_food_western:    ["fried chicken burger", "french fries", "grilled chicken wrap", "coleslaw"],
-  local_canteen:        ["egusi soup pounded yam", "jollof rice fried plantain", "ofe onugbu garri", "amala ewedu gbegiri"],
-  suya_grill:           ["beef suya", "chicken suya", "asun peppered goat meat", "grilled fish pepper sauce"],
-  seafood_joint:        ["peppered fish", "grilled tilapia", "prawn stir fry", "seafood okra soup"],
-  pepper_soup_joint:    ["goat meat pepper soup", "catfish pepper soup", "cow leg pepper soup", "assorted meat pepper soup"],
-  chinese_continental:  ["fried rice egg", "noodles chicken", "sweet sour chicken", "vegetable stir fry"],
-  shawarma_pizza:       ["chicken shawarma", "beef shawarma", "pepperoni pizza", "chicken pizza"],
-  fine_dining_nigerian: ["ofada rice ayamase sauce", "banga soup starch", "oha soup", "nkwobi cow leg"],
-  unknown:              ["jollof rice", "egusi soup pounded yam", "grilled chicken", "fried plantain", "pepper soup", "ofada rice"],
+  fast_food_nigerian:   ["jollof rice chicken", "fried rice", "coleslaw", "moi moi", "puff puff", "meat pie"],
+  fast_food_western:    ["fried chicken", "burger", "french fries", "chicken wrap", "coleslaw", "chicken tenders"],
+  local_canteen:        ["egusi soup", "vegetable soup", "beans porridge", "jollof rice", "amala ewedu", "ofada rice"],
+  suya_grill:           ["beef suya", "chicken suya", "asun peppered goat", "grilled fish", "yaji spice", "fried plantain"],
+  seafood_joint:        ["peppered fish", "grilled tilapia", "catfish pepper soup", "prawn stir fry", "seafood okra soup", "fish stew"],
+  pepper_soup_joint:    ["goat meat pepper soup", "catfish pepper soup", "cow leg pepper soup", "chicken pepper soup", "assorted meat pepper soup", "point and kill"],
+  chinese_continental:  ["fried rice", "noodles", "sweet sour chicken", "vegetable stir fry", "spring rolls", "egg fried rice"],
+  shawarma_pizza:       ["chicken shawarma", "beef shawarma", "pepperoni pizza", "chicken pizza", "vegetable pizza", "cheese pizza"],
+  fine_dining_nigerian: ["ofada rice ayamase", "banga soup starch", "oha soup", "nkwobi", "abacha", "ugba"],
+  unknown:              ["jollof rice", "vegetable soup", "beans", "fried rice", "pepper soup", "plantain"],
 };
 
 function classifyByPattern(name, types) {
@@ -30,11 +30,11 @@ function classifyByPattern(name, types) {
 
   if (n.match(/chicken republic|mr bigg|tastee|tantalizer|sweet sensation|debonairs/)) return "fast_food_nigerian";
   if (n.match(/\bkfc\b|domino|subway|burger king|cold stone|pizza hut|hardee/)) return "fast_food_western";
-  if (n.match(/suya|asun|kilishi|bbq|barbeque|grill(?!e)/)) return "suya_grill";
+  if (n.match(/suya|asun|kilishi|bbq|barbeque|grill(?!e)/) && !n.match(/restaurant/)) return "suya_grill";
   if (n.match(/seafood|lobster|crab|prawn|fish ?house|fish ?spot/)) return "seafood_joint";
   if (n.match(/pepper.?soup|nkwobi|point.?and.?kill/)) return "pepper_soup_joint";
   if (n.match(/chinese|asian|wok|dragon|jade|dynasty|continental|intercontinental/)) return "chinese_continental";
-  if (n.match(/shawarma|pizza|wraps?|middle.?east|lebanese|turkish/)) return "shawarma_pizza";
+  if (n.match(/shawarma|pizza|wraps?|middle.?east|lebanese|turkish/) && !n.match(/hotel|suite|lodge/)) return "shawarma_pizza";
   if (n.match(/restaurant(?! canteen| buka)/) && t.includes("restaurant") && !t.includes("fast_food")) return null;
   if (t.includes("fast_food") || t.includes("meal_takeaway")) return "fast_food_nigerian";
   if (n.match(/mama|buka|bukas|canteen|eatery|chophouse|chop.?house|joint|spot/)) return "local_canteen";
