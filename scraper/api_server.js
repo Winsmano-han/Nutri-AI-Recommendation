@@ -40,7 +40,7 @@ const MODEL_API_URL = (process.env.MODEL_API_URL || "http://127.0.0.1:8011").rep
 const CACHE_TTL_MS = parseInt(process.env.RECOMMENDATION_CACHE_TTL_MS || "3600000", 10);
 const MAX_PIPELINE_QUEUE = parseInt(process.env.MAX_PIPELINE_QUEUE || "20", 10);
 const DEFAULT_MAX_RESTAURANTS = parseInt(process.env.DEFAULT_MAX_RESTAURANTS || "3", 10);
-const HARD_MAX_RESTAURANTS = parseInt(process.env.HARD_MAX_RESTAURANTS || "5", 10);
+const HARD_MAX_RESTAURANTS = parseInt(process.env.HARD_MAX_RESTAURANTS || "60", 10);
 const GEO_CACHE_DECIMALS = parseInt(process.env.GEO_CACHE_DECIMALS || "2", 10);
 const PIPELINE_TIMEOUT_MS = parseInt(process.env.PIPELINE_TIMEOUT_MS || "170000", 10);
 

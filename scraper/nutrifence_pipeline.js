@@ -83,7 +83,7 @@ const ENABLE_GEMINI_SEARCH = process.env.ENABLE_GEMINI_SEARCH === "1";
 const USER_LAT      = parseFloat(process.env.USER_LAT  || "7.3775");
 const USER_LNG      = parseFloat(process.env.USER_LNG  || "3.9470");
 const SEARCH_RADIUS = parseInt(process.env.SEARCH_RADIUS || "2000", 10);
-const MAX_RESTAURANTS = parseInt(process.env.MAX_RESTAURANTS || "20", 10);
+const MAX_RESTAURANTS = parseInt(process.env.MAX_RESTAURANTS || "3", 10);
 
 // Parse user health profile from env or use empty defaults
 let USER_PROFILE = { conditions: [], restrictions: [] };
@@ -1185,15 +1185,19 @@ async function main() {
     }
     console.log(`  After dedup (page 1): ${allPlaces.size} unique venues`);
 
-    // Fetch next page if we haven't hit the cap and a page token exists
-    if (data.next_page_token && allPlaces.size < MAX_RESTAURANTS) {
-      await sleep(2000); // Google requires a short delay before using next_page_token
-      const page2 = await searchNearbyRestaurants(USER_LAT, USER_LNG, data.next_page_token);
-      console.log(`  Places API returned: ${page2.results?.length || 0} results (page 2)`);
-      for (const place of page2.results || []) {
+    // Fetch additional result pages until the requested cap is reached.
+    let nextPageToken = data.next_page_token;
+    let pageNum = 2;
+    while (nextPageToken && allPlaces.size < MAX_RESTAURANTS) {
+      await sleep(2000);
+      const nextPage = await searchNearbyRestaurants(USER_LAT, USER_LNG, nextPageToken);
+      console.log(`  Places API returned: ${nextPage.results?.length || 0} results (page ${pageNum})`);
+      for (const place of nextPage.results || []) {
         if (!allPlaces.has(place.place_id)) allPlaces.set(place.place_id, place);
       }
-      console.log(`  After dedup (page 2): ${allPlaces.size} unique venues`);
+      console.log(`  After dedup (page ${pageNum}): ${allPlaces.size} unique venues`);
+      nextPageToken = nextPage.next_page_token;
+      pageNum++;
     }
   } catch (e) {
     console.error(`❌ Places search failed: ${e.message}`);
@@ -1560,5 +1564,4 @@ main().catch(err => {
   console.error("\n💥 Fatal error:", err.message);
   process.exit(1);
 });
-
 
